@@ -1,8 +1,13 @@
-"""OpenAI GPT API interface for text, vision, and structured outputs."""
+"""OpenAI GPT API interface for text, vision, and structured outputs.
+
+Prefers the OpenAI Responses API, but falls back to Chat Completions for
+OpenAI-compatible backends that do not implement ``/v1/responses``.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any, Dict, Iterator, List, Optional, Type, Union
 
 import numpy as np
@@ -10,7 +15,7 @@ import openai
 from PIL import Image
 from pydantic import BaseModel
 from dotenv import load_dotenv
-
+import httpx
 from models.llm._common import encode_image_data_url
 
 load_dotenv()
@@ -20,9 +25,13 @@ class GPTInterface:
     """Interface for OpenAI GPT API supporting text, vision, structured outputs, and embeddings."""
 
     def __init__(self, client: Optional[openai.OpenAI] = None):
-        self.client = client or openai.OpenAI()
+        # self.client = client or openai.OpenAI()
+        custom_client = httpx.Client(timeout=30, proxy="http://127.0.0.1:10808")
+        self.client = openai.OpenAI(http_client=custom_client)
 
-    def _encode_image(self, image: Union[np.ndarray, Image.Image], format: str = "jpeg") -> str:
+    def _encode_image(
+        self, image: Union[np.ndarray, Image.Image], format: str = "jpeg"
+    ) -> str:
         """Encode image to data URL."""
         return encode_image_data_url(image, format=format)
 
@@ -44,39 +53,197 @@ class GPTInterface:
         api_kwargs.update(kwargs)
         return api_kwargs
 
+    def _should_fallback_to_chat(self, exc: Exception) -> bool:
+        """Return True when the backend likely lacks Responses API support."""
+        msg = str(exc).lower()
+        fallback_markers = (
+            "404",
+            "not found",
+            "page not found",
+            "/v1/responses",
+            "unknown url",
+            "unsupported",
+        )
+        return any(marker in msg for marker in fallback_markers)
+
+    def _build_chat_messages(
+        self,
+        prompt: Union[str, List[Dict[str, Any]]],
+        *,
+        instructions: Optional[str] = None,
+        image: Optional[Union[str, np.ndarray, Image.Image, List[Any]]] = None,
+        detail: str = "auto",
+    ) -> List[Dict[str, Any]]:
+        """Convert prompt + optional images into Chat Completions message format."""
+        messages: List[Dict[str, Any]] = []
+        if instructions:
+            messages.append({"role": "system", "content": instructions})
+
+        if isinstance(prompt, str):
+            if image is None:
+                messages.append({"role": "user", "content": prompt})
+            else:
+                images = image if isinstance(image, list) else [image]
+                content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+                for img in images:
+                    content.append(
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": (
+                                    img
+                                    if isinstance(img, str)
+                                    else self._encode_image(img)
+                                ),
+                                "detail": detail,
+                            },
+                        }
+                    )
+                messages.append({"role": "user", "content": content})
+            return messages
+
+        for message in prompt:
+            role = message.get("role", "user")
+            content = message.get("content", "")
+            if isinstance(content, list):
+                converted: List[Dict[str, Any]] = []
+                for item in content:
+                    if not isinstance(item, dict):
+                        converted.append({"type": "text", "text": str(item)})
+                        continue
+                    item_type = item.get("type")
+                    if item_type == "input_text":
+                        converted.append({"type": "text", "text": item.get("text", "")})
+                    elif item_type == "input_image":
+                        image_url = item.get("image_url")
+                        if isinstance(image_url, dict):
+                            url = image_url.get("url", "")
+                        else:
+                            url = image_url
+                        converted.append(
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": url,
+                                    "detail": item.get("detail", detail),
+                                },
+                            }
+                        )
+                    else:
+                        converted.append(item)
+                messages.append({"role": role, "content": converted})
+            else:
+                messages.append({"role": role, "content": content})
+        return messages
+
+    def _extract_chat_text(self, response: Any) -> str:
+        """Extract text from a Chat Completions response."""
+        choice = response.choices[0]
+        message = getattr(choice, "message", None)
+        if message is None:
+            return ""
+        content = getattr(message, "content", "")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: List[str] = []
+            for item in content:
+                if isinstance(item, dict):
+                    text = item.get("text")
+                    if text:
+                        parts.append(text)
+                else:
+                    text = getattr(item, "text", None)
+                    if text:
+                        parts.append(text)
+            return "\n".join(parts)
+        return str(content)
+
+    def _chat_completion_create(self, **kwargs: Any) -> Any:
+        return self.client.chat.completions.create(**kwargs)
+
+    def _structured_via_chat(
+        self,
+        prompt: Union[str, List[Dict[str, Any]]],
+        response_model: Type[BaseModel],
+        model: str,
+        image: Optional[Union[str, np.ndarray, Image.Image, List[Any]]] = None,
+        detail: str = "auto",
+        instructions: Optional[str] = None,
+        **_: Any,
+    ) -> BaseModel:
+        """Fallback structured output generation via Chat Completions."""
+        schema = json.dumps(
+            response_model.model_json_schema(), ensure_ascii=False, indent=2
+        )
+        format_hint = (
+            "Return ONLY valid JSON matching this schema exactly. "
+            "Do not wrap it in markdown fences.\n\n"
+            f"JSON schema:\n{schema}"
+        )
+        merged_instructions = (
+            f"{instructions}\n\n{format_hint}" if instructions else format_hint
+        )
+        messages = self._build_chat_messages(
+            prompt,
+            instructions=merged_instructions,
+            image=image,
+            detail=detail,
+        )
+        response = self._chat_completion_create(
+            model=model,
+            messages=messages,
+            response_format={"type": "json_object"},
+        )
+        text = self._extract_chat_text(response)
+        return response_model.model_validate_json(text)
+
     def text_prompt(
         self,
         prompt: Union[str, List[Dict[str, str]]],
-        model: str = "gpt-5-mini",
+        model: str = "gpt-5.4",
         stream: bool = False,
         **kwargs: Any,
     ) -> Union[str, Iterator[str]]:
         """Generate text response from a prompt."""
         api_kwargs = self._prepare_common_kwargs(**kwargs)
         api_kwargs.update({"model": model, "input": prompt})
+        instructions = api_kwargs.pop("instructions", None)
 
-        if stream:
-            response_stream = self.client.responses.create(stream=True, **api_kwargs)
-            return (
-                chunk.delta
-                for chunk in response_stream
-                if chunk.type == "response.output_text.delta"
-            )
+        try:
+            if stream:
+                response_stream = self.client.responses.create(
+                    stream=True, **api_kwargs
+                )
+                return (
+                    chunk.delta
+                    for chunk in response_stream
+                    if chunk.type == "response.output_text.delta"
+                )
 
-        response = self.client.responses.create(**api_kwargs)
-        return response.output_text
+            response = self.client.responses.create(**api_kwargs)
+            return response.output_text
+        except Exception as e:
+            if not self._should_fallback_to_chat(e):
+                raise
+            messages = self._build_chat_messages(prompt, instructions=instructions)
+            response = self._chat_completion_create(model=model, messages=messages)
+            return self._extract_chat_text(response)
 
     def vision_prompt(
         self,
         prompt: str,
-        image: Union[str, np.ndarray, Image.Image, List[Union[str, np.ndarray, Image.Image]]],
-        model: str = "gpt-5-mini",
+        image: Union[
+            str, np.ndarray, Image.Image, List[Union[str, np.ndarray, Image.Image]]
+        ],
+        model: str = "gpt-5.4",
         detail: str = "auto",
         stream: bool = False,
         **kwargs: Any,
     ) -> Union[str, Iterator[str]]:
         """Analyze image(s) and generate text response."""
         api_kwargs = self._prepare_common_kwargs(**kwargs)
+        instructions = api_kwargs.get("instructions")
 
         images = image if isinstance(image, list) else [image]
         image_contents = [
@@ -89,24 +256,40 @@ class GPTInterface:
         ]
 
         content = [{"type": "input_text", "text": prompt}, *image_contents]
-        api_kwargs.update({"model": model, "input": [{"role": "user", "content": content}]})
+        api_kwargs.update(
+            {"model": model, "input": [{"role": "user", "content": content}]}
+        )
 
-        if stream:
-            response_stream = self.client.responses.create(stream=True, **api_kwargs)
-            return (
-                chunk.delta
-                for chunk in response_stream
-                if chunk.type == "response.output_text.delta"
+        try:
+            if stream:
+                response_stream = self.client.responses.create(
+                    stream=True, **api_kwargs
+                )
+                return (
+                    chunk.delta
+                    for chunk in response_stream
+                    if chunk.type == "response.output_text.delta"
+                )
+
+            response = self.client.responses.create(**api_kwargs)
+            return response.output_text
+        except Exception as e:
+            if not self._should_fallback_to_chat(e):
+                raise
+            messages = self._build_chat_messages(
+                prompt,
+                instructions=instructions,
+                image=image,
+                detail=detail,
             )
-
-        response = self.client.responses.create(**api_kwargs)
-        return response.output_text
+            response = self._chat_completion_create(model=model, messages=messages)
+            return self._extract_chat_text(response)
 
     def structured_prompt(
         self,
         prompt: Union[str, List[Dict[str, Any]]],
         response_model: Type[BaseModel],
-        model: str = "gpt-5-mini",
+        model: str = "gpt-5.4",
         stream: bool = False,
         image: Optional[Union[str, np.ndarray, Image.Image, List]] = None,
         detail: str = "auto",
@@ -114,6 +297,7 @@ class GPTInterface:
     ) -> Union[BaseModel, Iterator[Any]]:
         """Generate structured JSON response conforming to a Pydantic model."""
         api_kwargs = self._prepare_common_kwargs(**kwargs)
+        instructions = api_kwargs.get("instructions")
 
         final_input: Union[str, List[Dict[str, Any]]]
         if image:
@@ -121,7 +305,9 @@ class GPTInterface:
             image_contents = [
                 {
                     "type": "input_image",
-                    "image_url": img if isinstance(img, str) else self._encode_image(img),
+                    "image_url": (
+                        img if isinstance(img, str) else self._encode_image(img)
+                    ),
                     "detail": detail,
                 }
                 for img in images
@@ -135,17 +321,31 @@ class GPTInterface:
         else:
             final_input = prompt
 
-        api_kwargs.update({
-            "model": model,
-            "input": final_input,
-            "text_format": response_model,
-        })
+        api_kwargs.update(
+            {
+                "model": model,
+                "input": final_input,
+                "text_format": response_model,
+            }
+        )
 
-        if stream:
-            return self.client.responses.stream(**api_kwargs)
+        try:
+            if stream:
+                return self.client.responses.stream(**api_kwargs)
 
-        response = self.client.responses.parse(**api_kwargs)
-        return response.output_parsed
+            response = self.client.responses.parse(**api_kwargs)
+            return response.output_parsed
+        except Exception as e:
+            if not self._should_fallback_to_chat(e):
+                raise
+            return self._structured_via_chat(
+                prompt,
+                response_model=response_model,
+                model=model,
+                image=image,
+                detail=detail,
+                instructions=instructions,
+            )
 
     async def _process_one_structured_prompt(
         self,
@@ -165,37 +365,63 @@ class GPTInterface:
             image_contents = [
                 {
                     "type": "input_image",
-                    "image_url": img if isinstance(img, str) else self._encode_image(img),
+                    "image_url": (
+                        img if isinstance(img, str) else self._encode_image(img)
+                    ),
                     "detail": detail,
                 }
                 for img in images
             ]
 
             if isinstance(prompt, str):
-                final_input = [{
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": prompt}, *image_contents],
-                }]
+                final_input = [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "input_text", "text": prompt},
+                            *image_contents,
+                        ],
+                    }
+                ]
             else:
                 final_input = [*prompt, {"role": "user", "content": image_contents}]
         else:
             final_input = prompt
 
-        api_kwargs.update({
-            "model": model,
-            "input": final_input,
-            "text_format": response_model,
-        })
+        api_kwargs.update(
+            {
+                "model": model,
+                "input": final_input,
+                "text_format": response_model,
+            }
+        )
 
-        response = await asyncio.to_thread(self.client.responses.parse, **api_kwargs)
-        return response.output_parsed
+        try:
+            response = await asyncio.to_thread(
+                self.client.responses.parse, **api_kwargs
+            )
+            return response.output_parsed
+        except Exception as e:
+            if not self._should_fallback_to_chat(e):
+                raise
+            return await asyncio.to_thread(
+                self._structured_via_chat,
+                prompt,
+                response_model,
+                model,
+                image,
+                detail,
+                api_kwargs.get("instructions"),
+            )
 
     async def structured_prompt_batch(
         self,
         prompts: List[Union[str, List[Dict[str, Any]]]],
         response_model: Type[BaseModel],
-        model: str = "gpt-5-mini",
-        images: Optional[List[Optional[Union[str, np.ndarray, Image.Image, list]]]] = None,
+        model: str = "gpt-5.4",
+        images: Optional[
+            List[Optional[Union[str, np.ndarray, Image.Image, list]]]
+        ] = None,
         detail: str = "auto",
         **kwargs: Any,
     ) -> List[Union[BaseModel, Exception]]:
@@ -234,6 +460,7 @@ class GPTInterface:
         """Create vector embeddings for text strings."""
         try:
             import tiktoken
+
             _enc_cache: Dict[str, Any] = {}
 
             def count_tokens(text: str) -> int:
@@ -245,7 +472,9 @@ class GPTInterface:
                         enc = tiktoken.get_encoding("cl100k_base")
                     _enc_cache[model] = enc
                 return len(enc.encode(text))
+
         except Exception:
+
             def count_tokens(text: str) -> int:
                 return max(1, len(text) // 4)
 
@@ -257,7 +486,11 @@ class GPTInterface:
             tokens = count_tokens(text)
             if tokens <= max_total_tokens:
                 return [text]
-            parts = [p.strip() for p in text.replace("?", ".").replace("!", ".").split(".") if p.strip()]
+            parts = [
+                p.strip()
+                for p in text.replace("?", ".").replace("!", ".").split(".")
+                if p.strip()
+            ]
             chunks: List[str] = []
             cur: List[str] = []
             cur_tokens = 0
@@ -310,7 +543,9 @@ class GPTInterface:
         if current_batch:
             batches.append(current_batch)
 
-        all_chunk_embeddings: List[Optional[List[float]]] = [None] * len(expanded_inputs)
+        all_chunk_embeddings: List[Optional[List[float]]] = [None] * len(
+            expanded_inputs
+        )
         usage_records: List[Any] = []
         model_name: Optional[str] = None
 
@@ -325,7 +560,9 @@ class GPTInterface:
                 create_kwargs["dimensions"] = dimensions
             response = self.client.embeddings.create(**create_kwargs)
             model_name = response.model
-            for local_i, emb in zip(batch_indices, [d.embedding for d in response.data]):
+            for local_i, emb in zip(
+                batch_indices, [d.embedding for d in response.data]
+            ):
                 all_chunk_embeddings[local_i] = emb
             usage_records.append(getattr(response, "usage", None))
 
@@ -339,13 +576,18 @@ class GPTInterface:
             vec = arr.sum(axis=0) if split_aggregate == "sum" else arr.mean(axis=0)
             return vec.tolist()
 
-        aggregated = [aggregate([all_chunk_embeddings[i] for i in idxs]) for idxs in original_to_chunk_indices]
+        aggregated = [
+            aggregate([all_chunk_embeddings[i] for i in idxs])
+            for idxs in original_to_chunk_indices
+        ]
 
         if normalize:
+
             def _l2_norm(vec: List[float]) -> List[float]:
                 arr = _np.asarray(vec, dtype=_np.float32)
                 norm = _np.linalg.norm(arr)
                 return vec if norm == 0 else (arr / norm).tolist()
+
             aggregated = [_l2_norm(e) for e in aggregated]
 
         base_result = aggregated[0] if single_input else aggregated

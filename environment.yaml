@@ -10,13 +10,14 @@ dependencies:
 
   # pip-only packages
   - pip:
+    - --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+    - --trusted-host pypi.tuna.tsinghua.edu.cn
     # Core package (installs keysg-build / keysg-vis entry points)
-    - -e .
 
     # torch and related
-    - torch==2.7.1
-    - torchvision==0.22.1
-    - torchaudio==2.7.1
+    #- torch==2.7.1
+    #- torchvision==0.22.1
+    #- torchaudio==2.7.1
 
     # 3D / vision
     - open3d

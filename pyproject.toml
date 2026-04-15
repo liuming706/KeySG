@@ -27,6 +27,7 @@ dependencies = [
     "scikit-learn",
     "opencv-python",
     "python-dotenv",
+    "sentence-transformers",
 ]
 
 [project.scripts]

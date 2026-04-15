@@ -38,6 +38,7 @@ try:
     from models.llm.openai_api import GPTInterface
 except ImportError:
     import sys
+
     _project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     if _project_root not in sys.path:
         sys.path.insert(0, _project_root)
@@ -138,7 +139,7 @@ SYSTEM_INSTRUCTIONS = (
 def analyze_and_expand_query(
     query: str,
     *,
-    model: str = "gpt-5-nano",
+    model: str = "gpt-5.4",
     client: Optional[Any] = None,
 ) -> QueryAnalysisResult:
     """Analyze a user query and generate expansion terms.
@@ -164,7 +165,7 @@ def analyze_and_expand_query(
         response_model=_QuerySchema,  # type: ignore[arg-type]
         model=model,
         instructions=SYSTEM_INSTRUCTIONS,
-        reasoning_effort="low", # NOTE: maybe "low" is sufficient.
+        reasoning_effort="low",  # NOTE: maybe "low" is sufficient.
     )
 
     query_parsed: Dict[str, Any] = {}

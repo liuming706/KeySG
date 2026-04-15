@@ -515,12 +515,15 @@ def build_chunks_from_descriptions(
     ):
         summary = room_data.get("summary")
         if isinstance(summary, dict):
+            room_type = summary.get("room_type") or ""
+            room_summary = summary.get("room_summary") or ""
+            layout = summary.get("layout") or ""
             summary_txt = (
-                summary.get("room_type", "")
+                room_type
                 + " "
-                + summary.get("room_summary", "")
+                + room_summary
                 + " "
-                + summary.get("layout", "")
+                + layout
             )
         else:
             summary_txt = summary or ""
@@ -715,8 +718,24 @@ def normalize_embeddings(arr: np.ndarray) -> np.ndarray:
     return arr / norms
 
 
-def prepare_text_query(gpt_interface, query: str, model_name: str) -> np.ndarray:
-    vec = gpt_interface.embed_text([query], model=model_name)
+def prepare_text_query(
+    gpt_interface, query: str, model_name: str, embedder=None
+) -> np.ndarray:
+    """Prepare text query embedding for search.
+
+    Args:
+        gpt_interface: GPTInterface instance (used if embedder is None)
+        query: Query string
+        model_name: Model name (for cache metadata)
+        embedder: Optional SentenceTransformerEmbedding instance for local models
+
+    Returns:
+        Query embedding as numpy array
+    """
+    if embedder is not None:
+        vec = embedder.embed_text([query])
+    else:
+        vec = gpt_interface.embed_text([query], model=model_name)
     q = np.asarray(vec, dtype="float32")
     q = normalize_embeddings(q)
     return q

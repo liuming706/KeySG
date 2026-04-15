@@ -32,6 +32,29 @@ from .graph_rag_utils import (
     build_frame_visual_faiss_index as _build_frame_visual_faiss_index_util,
 )
 
+# Local embedding model support
+try:
+    from models.llm.sentence_transformer_embedding import (
+        SentenceTransformerEmbedding,
+        DEFAULT_MODEL as _DEFAULT_EMBED_MODEL,
+    )
+except ImportError:
+    try:
+        import sys
+
+        _project_root = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..")
+        )
+        if _project_root not in sys.path:
+            sys.path.insert(0, _project_root)
+        from models.llm.sentence_transformer_embedding import (
+            SentenceTransformerEmbedding,
+            DEFAULT_MODEL as _DEFAULT_EMBED_MODEL,
+        )
+    except ImportError:
+        SentenceTransformerEmbedding = None  # type: ignore
+        _DEFAULT_EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # type: ignore
+
 # Import utilities - handle both installed package and direct execution scenarios
 try:
     from keysg.utils.load_utils import load_scene_nodes, get_objects
@@ -71,6 +94,11 @@ class GraphContextRetriever:
         self.gpt = None
         self.clip = None
         self.clip_model_id: Optional[str] = None
+
+        # Local embedder (sentence-transformers)
+        self.embedder = None
+        self.embedder_is_local = False
+        self.embedder_import_error: Optional[str] = None
 
         # Frame visual indexing
         self.frame_visual_embeddings: Optional[np.ndarray] = None
@@ -138,13 +166,23 @@ class GraphContextRetriever:
 
     def compute_embeddings(
         self,
-        model_name: str = "text-embedding-3-small",
+        model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
         use_cache: bool = True,
         compute_frame_visual: bool = True,
         compute_object_visual: bool = True,
         clip_config: Optional[Dict[str, Any]] = None,
+        use_local_embedder: bool = True,
     ) -> np.ndarray:
-        """Compute (or load cached) text embeddings (OpenAI) and optionally frame visual embeddings."""
+        """Compute (or load cached) text embeddings and optionally frame visual embeddings.
+
+        Args:
+            model_name: Embedding model name (defaults to local sentence-transformer)
+            use_cache: Use cached embeddings if available
+            compute_frame_visual: Compute frame visual (CLIP) embeddings
+            compute_object_visual: Compute object visual embeddings
+            clip_config: CLIP model config for visual embeddings
+            use_local_embedder: If True, use local sentence-transformers instead of OpenAI
+        """
         if not self.chunks:
             self.build_chunks()
 
@@ -168,14 +206,36 @@ class GraphContextRetriever:
                 truncated += 1
             texts.append(t)
         if truncated:
-            logger.info("Truncated {} chunks to {} chars for embedding", truncated, _MAX_EMBED_CHARS)
-        logger.info("Embedding {} chunks (model={})", len(texts), model_name)
-        self._ensure_gpt()
-        with _tqdm(
-            total=len(texts), desc="Text embeddings (API batch)", unit="chunk"
-        ) as pbar:
-            raw = self.gpt.embed_text(texts, model=model_name)  # type: ignore[attr-defined]
-            pbar.update(len(texts))
+            logger.info(
+                "Truncated {} chunks to {} chars for embedding",
+                truncated,
+                _MAX_EMBED_CHARS,
+            )
+        logger.info(
+            "Embedding {} chunks (model={}, local={})",
+            len(texts),
+            model_name,
+            use_local_embedder,
+        )
+
+        # Use local embedder or OpenAI based on flag
+        if use_local_embedder and SentenceTransformerEmbedding is not None:
+            self._ensure_embedder(model_name)
+            with _tqdm(
+                total=len(texts), desc="Text embeddings (local)", unit="chunk"
+            ) as pbar:
+                raw = self.embedder.embed_text(texts)
+                pbar.update(len(texts))
+            self.embedder_is_local = True
+        else:
+            self._ensure_gpt()
+            with _tqdm(
+                total=len(texts), desc="Text embeddings (API batch)", unit="chunk"
+            ) as pbar:
+                raw = self.gpt.embed_text(texts, model=model_name)  # type: ignore[attr-defined]
+                pbar.update(len(texts))
+            self.embedder_is_local = False
+
         self.embeddings = normalize_embeddings(np.asarray(raw, dtype="float32"))
         self.embed_model_name = model_name
         np.save(self.emb_path, self.embeddings)
@@ -270,7 +330,9 @@ class GraphContextRetriever:
             "created": time.time(),
             "total_chunks": len(records),
             "embedding_model": self.embed_model_name,
-            "embedding_backend": "openai",
+            "embedding_backend": "sentence-transformers"
+            if self.embedder_is_local
+            else "openai",
             "chunks": records,
         }
         with open(self.meta_path, "w", encoding="utf-8") as f:
@@ -284,6 +346,7 @@ class GraphContextRetriever:
                 from models.llm.openai_api import GPTInterface
             except ImportError:
                 import sys
+
                 _project_root = os.path.abspath(
                     os.path.join(os.path.dirname(__file__), "..", "..")
                 )
@@ -296,6 +359,23 @@ class GraphContextRetriever:
                         "GPTInterface not available. Ensure OpenAI dependencies are installed."
                     )
             self.gpt = GPTInterface()
+
+    def _ensure_embedder(self, model_name: str = None):
+        """Lazy-load local sentence-transformer embedder."""
+        if self.embedder is None:
+            if SentenceTransformerEmbedding is None:
+                self.embedder_import_error = (
+                    "Could not import models.llm.sentence_transformer_embedding. "
+                    "This is usually a Python path / package import issue, not an OpenAI or CLIP issue."
+                )
+                raise RuntimeError(
+                    "SentenceTransformerEmbedding not available. "
+                    "Ensure sentence-transformers is installed and that the project root is on PYTHONPATH."
+                )
+            model_name = model_name or _DEFAULT_EMBED_MODEL
+            logger.info("Initializing local embedding model: {}", model_name)
+            self.embedder = SentenceTransformerEmbedding(model_name=model_name)
+            self.embedder_is_local = True
 
     # ------------------------------------------------------------------
     # Search
@@ -332,7 +412,7 @@ class GraphContextRetriever:
         doc_type_set: Optional[Set[str]] = (
             set(dt.lower() for dt in doc_types) if doc_types else None
         )
-
+        print("DEBUG:4.1")
         # Determine if text index needed (any doc type requiring text embedding)
         searching_frames = not doc_type_set or "frame" in doc_type_set
         searching_objects = not doc_type_set or "object" in doc_type_set
@@ -349,7 +429,7 @@ class GraphContextRetriever:
             raise RuntimeError(
                 "Text search requested but embeddings or index are not loaded. Please run compute_embeddings() and build_faiss_index() first."
             )
-
+        print("DEBUG:4.2")
         if frame_modality in {"visual", "both"}:
             if (
                 self.frame_visual_index is None
@@ -359,7 +439,7 @@ class GraphContextRetriever:
                 raise RuntimeError(
                     "Frame visual search requested but visual embeddings/index missing. Run compute_embeddings(compute_frame_visual=True) first."
                 )
-
+        print("DEBUG:4.3")
         # Ensure object visual embeddings if requested
         if object_modality in {"visual", "both"}:
             try:
@@ -380,7 +460,7 @@ class GraphContextRetriever:
                         "Object visual index unavailable; degrading to text-only for objects."
                     )
                     object_modality = "text"
-
+        print("DEBUG:4.4")
         # expanded top-K for initial search if filtering by doc type
         k_search = (
             top_k
@@ -391,12 +471,33 @@ class GraphContextRetriever:
         # Text search
         text_results: Optional[Tuple[np.ndarray, np.ndarray]] = None
         if need_text:
-            self._ensure_gpt()
-            q_emb = prepare_text_query(
-                self.gpt, query, self.embed_model_name or "text-embedding-3-small"
+            # Prefer the local embedder by default whenever the configured
+            # embedding model is a sentence-transformers model.
+            preferred_model = self.embed_model_name or _DEFAULT_EMBED_MODEL
+            prefer_local = (
+                self.embedder_is_local
+                or (preferred_model or "").startswith("sentence-transformers/")
             )
-            text_results = self.index.search(q_emb, k_search)  # type: ignore
 
+            if prefer_local:
+                self._ensure_embedder(preferred_model)
+
+            if self.embedder_is_local and self.embedder is not None:
+                print("DEBUG:4.4.1")
+                q_emb = prepare_text_query(
+                    None,
+                    query,
+                    preferred_model or "sentence-transformers/all-MiniLM-L6-v2",
+                    embedder=self.embedder,
+                )
+            else:
+                print("DEBUG:4.4.2")
+                self._ensure_gpt()
+                q_emb = prepare_text_query(
+                    self.gpt, query, self.embed_model_name or "text-embedding-3-small"
+                )
+            text_results = self.index.search(q_emb, k_search)  # type: ignore
+        print("DEBUG:4.5")
         # Visual search (frames & objects) via CLIP text query embedding (compute once if needed)
         frame_visual_results: Optional[Tuple[np.ndarray, np.ndarray]] = None
         object_visual_results: Optional[Tuple[np.ndarray, np.ndarray]] = None
@@ -411,6 +512,7 @@ class GraphContextRetriever:
             clip_text_query /= (
                 np.linalg.norm(clip_text_query, axis=1, keepdims=True) + 1e-9
             )
+        print("DEBUG:4.6")
         # Frames
         if clip_text_query is not None and frame_modality in {"visual", "both"}:
             k_frames = min(
@@ -418,6 +520,7 @@ class GraphContextRetriever:
                 max(k_search, len(self.frame_visual_chunk_indices)),
             )
             frame_visual_results = self.frame_visual_index.search(clip_text_query, k_frames)  # type: ignore
+        print("DEBUG:4.7")
         # Objects
         if clip_text_query is not None and object_modality in {"visual", "both"}:
             k_objs = min(
@@ -589,7 +692,7 @@ class GraphContextRetriever:
         self,
         context_package: Dict[str, Any],
         *,
-        model: str = "gpt-5-mini",
+        model: str = "gpt-5.4",
         structured: bool = True,
         return_text_only: bool = False,
     ) -> Any:

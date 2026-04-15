@@ -676,7 +676,11 @@ class KeySGPipeline:
         logger.info("Saved floor summaries for {} floor(s)", len(floor_summaries))
 
 
-@hydra.main(version_base=None, config_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "config"), config_name="main_pipeline")
+@hydra.main(
+    version_base=None,
+    config_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "config"),
+    config_name="main_pipeline",
+)
 def main(cfg: DictConfig) -> None:
     """Main entry point."""
     setup_logging()
