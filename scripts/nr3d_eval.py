@@ -139,7 +139,7 @@ def _run_keysg_rag(
     include_frame_images: bool = True,
     include_frame_text: bool = True,
     max_frame_images: int = 2,
-    rag_model: str = "gpt-5-mini",
+    rag_model: str = "gpt-5.4",
     top_k_objects: int = 10,
     top_k_frames: int = 1,
     gt_corners_map: Optional[Dict[str, np.ndarray]] = None,
@@ -202,7 +202,7 @@ def _run_keysg_rag(
         analysis_prompts,
         images_list=None,
         response_model=_QuerySchema,
-        model="gpt-5-nano",
+        model="gpt-5.4",
         instructions=_QUERY_ANALYSIS_INSTRUCTIONS,
         reasoning_effort="low",
     )
@@ -469,7 +469,7 @@ def main() -> None:
     parser.add_argument(
         "--rag_model",
         type=str,
-        default="gpt-5-mini",
+        default="gpt-5.4",
         help="OpenAI model for RAG LLM object selection",
     )
     parser.add_argument(

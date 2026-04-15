@@ -139,7 +139,7 @@ SYSTEM_INSTRUCTIONS = (
 def analyze_and_expand_query(
     query: str,
     *,
-    model: str = "gpt-5-nano",
+    model: str = "gpt-5.4",
     client: Optional[Any] = None,
 ) -> QueryAnalysisResult:
     """Analyze a user query and generate expansion terms.

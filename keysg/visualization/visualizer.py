@@ -230,7 +230,9 @@ def _build_spatial_relations(target_vis, anchor_vis, obj_by_id) -> List[str]:
             # Directional predicates (world-frame: X=right, Y=up, Z=forward)
             directions = []
             if abs(delta[0]) > 0.2:
-                directions.append("to the right of" if delta[0] > 0 else "to the left of")
+                directions.append(
+                    "to the right of" if delta[0] > 0 else "to the left of"
+                )
             if abs(delta[1]) > 0.2:
                 directions.append("above" if delta[1] > 0 else "below")
             if abs(delta[2]) > 0.2:
@@ -292,19 +294,21 @@ def _run_grounding_query(
     # Phase 1: query analysis
     anchor_objects: List[str] = []
     relation_polarity = None
+    print("DEBUG:1")
     try:
         analysis = gpt.structured_prompt(
             f"User query: {query}",
             response_model=_QuerySchema,
-            model="gpt-5-nano",
+            model="gpt-5.4",
             instructions=_QUERY_ANALYSIS_INSTRUCTIONS,
         )
         target_q = analysis.target_object or query
         anchor_objects = analysis.anchor_objects or []
         relation_polarity = getattr(analysis, "relation_polarity", None)
     except Exception:
+        print("DEBUG:2")
         target_q = query
-
+    print("DEBUG:3")
     # Phase 2: RAG retrieval (use pre-built retriever if provided)
     if retriever is None:
         retriever = GraphContextRetriever(scene_dir)
@@ -313,7 +317,7 @@ def _run_grounding_query(
             compute_frame_visual=True, compute_object_visual=True
         )
         retriever.build_faiss_index()
-
+    print("DEBUG:4")
     target_results = retriever.search(
         target_q,
         top_k=top_k_objects,
@@ -321,7 +325,7 @@ def _run_grounding_query(
         object_modality="both",
     )
     target_vis = target_results.get("object_visual", [])
-
+    print("DEBUG:5")
     anchor_vis: List = []
     if anchor_objects:
         anchor_query = " ".join(anchor_objects)
@@ -346,7 +350,7 @@ def _run_grounding_query(
         frame_results, top_k_frames, include_visual=True, include_text=False
     )
     top_frame_chunks = [chunk_map[fid] for fid in top_frame_ids if fid in chunk_map]
-
+    print("6")
     pred_id = None
     confidence = 0.0
     reason = "No candidates found"
@@ -380,7 +384,8 @@ def _run_grounding_query(
             spatial_lines = _build_spatial_relations(target_vis, anchor_vis, obj_by_id)
             if spatial_lines:
                 sections.append(
-                    "Spatial Relations (target <-> anchor):\n" + "\n".join(spatial_lines)
+                    "Spatial Relations (target <-> anchor):\n"
+                    + "\n".join(spatial_lines)
                 )
 
         context_text = "\n\n".join(sections)
@@ -420,13 +425,16 @@ def _run_grounding_query(
                 meta = chunk.metadata or {}
                 fidx = meta.get("frame_index")
                 if fidx is not None and fidx in obj_frame_indices:
-                    keyframes.append({
-                        "frame_id": chunk.id,
-                        "frame_index": fidx,
-                        "room_id": meta.get("room_id", ""),
-                        "image_path": meta.get("labeled_image_path") or meta.get("image_path", ""),
-                        "description": chunk.content[:200] if chunk.content else "",
-                    })
+                    keyframes.append(
+                        {
+                            "frame_id": chunk.id,
+                            "frame_index": fidx,
+                            "room_id": meta.get("room_id", ""),
+                            "image_path": meta.get("labeled_image_path")
+                            or meta.get("image_path", ""),
+                            "description": chunk.content[:200] if chunk.content else "",
+                        }
+                    )
 
     obj_label = None
     if pred_id and objects:
@@ -490,6 +498,7 @@ def _run_keyframe_search(
 
     if retriever is None:
         from keysg.rag.graph_context_retriever import GraphContextRetriever
+
         raise ValueError("retriever must be provided")
 
     # RAG retrieval on frame chunks
@@ -517,15 +526,18 @@ def _run_keyframe_search(
 
     for chunk in top_frame_chunks:
         meta = chunk.metadata or {}
-        frames.append({
-            "frame_id": chunk.id,
-            "frame_index": meta.get("frame_index"),
-            "room_id": meta.get("room_id", ""),
-            "score": float(score_map.get(chunk.id, 0.0)),
-            "description": chunk.content[:300] if chunk.content else "",
-            "image_path": meta.get("labeled_image_path") or meta.get("image_path", ""),
-            "objects_in_frame": meta.get("node_tags", []),
-        })
+        frames.append(
+            {
+                "frame_id": chunk.id,
+                "frame_index": meta.get("frame_index"),
+                "room_id": meta.get("room_id", ""),
+                "score": float(score_map.get(chunk.id, 0.0)),
+                "description": chunk.content[:300] if chunk.content else "",
+                "image_path": meta.get("labeled_image_path")
+                or meta.get("image_path", ""),
+                "objects_in_frame": meta.get("node_tags", []),
+            }
+        )
 
     if mode == "rag_only" or not frames:
         return {"query": query, "mode": mode, "frames": frames[:top_k]}
@@ -575,16 +587,23 @@ def _run_keyframe_search(
         for rf in ranking.ranked_frames:
             base = frame_data_map.get(rf.frame_id)
             if base:
-                llm_ranked.append({
-                    **base,
-                    "llm_score": rf.score,
-                    "relevance": rf.relevance,
-                })
+                llm_ranked.append(
+                    {
+                        **base,
+                        "llm_score": rf.score,
+                        "relevance": rf.relevance,
+                    }
+                )
         return {"query": query, "mode": mode, "frames": llm_ranked[:top_k]}
     except Exception as e:
         logger.warning("LLM frame re-ranking failed: {}", e)
         # Fallback to RAG-only results
-        return {"query": query, "mode": "rag_only (llm fallback)", "frames": frames[:top_k]}
+        return {
+            "query": query,
+            "mode": "rag_only (llm fallback)",
+            "frames": frames[:top_k],
+        }
+
 
 def _run_open_qa(
     question: str,
@@ -621,7 +640,7 @@ def _run_open_qa(
         analysis = gpt.structured_prompt(
             f"User query: {question}",
             response_model=_QuerySchema,
-            model="gpt-5-nano",
+            model="gpt-5.4",
             instructions=_QUERY_ANALYSIS_INSTRUCTIONS,
         )
         target_q = analysis.target_object or question
@@ -698,7 +717,7 @@ def _run_open_qa(
         resp = gpt.structured_prompt(
             context_text,
             response_model=SceneAnswer,
-            model="gpt-5-mini",
+            model="gpt-5.4",
             image=frame_images if frame_images else None,
             detail="high",
             instructions=_OPEN_QA_SYSTEM_PROMPT,
@@ -734,7 +753,9 @@ class KeySGVisualizer:
         self._floor_handles: Dict[str, Any] = {}
         self._room_handles: Dict[str, Any] = {}
         self._frustum_handles: Dict[str, Any] = {}
-        self._highlighted_frustums: Dict[str, Any] = {}  # red-highlighted frustum handles
+        self._highlighted_frustums: Dict[str, Any] = (
+            {}
+        )  # red-highlighted frustum handles
         self._bbox_handle: Optional[Any] = None
 
         # State
@@ -1049,8 +1070,8 @@ class KeySGVisualizer:
             if len(parts) < 4:
                 continue
             floor_name = parts[1]  # "floor_X"
-            room_name = parts[2]   # "room_Y_Z"
-            idx_str = parts[3]     # "42"
+            room_name = parts[2]  # "room_Y_Z"
+            idx_str = parts[3]  # "42"
             room_id = room_name.replace("room_", "")
             try:
                 frame_idx = int(idx_str)
@@ -1288,7 +1309,11 @@ class KeySGVisualizer:
                             kf_ids = ", ".join(
                                 f"`{kf['frame_id']}`" for kf in kf_list[:8]
                             )
-                            suffix = f" *(+{len(kf_list)-8} more)*" if len(kf_list) > 8 else ""
+                            suffix = (
+                                f" *(+{len(kf_list)-8} more)*"
+                                if len(kf_list) > 8
+                                else ""
+                            )
                             grounding_result.content += (
                                 f"\n\n**Appeared in keyframes:** {kf_ids}{suffix}"
                             )
@@ -1366,7 +1391,9 @@ class KeySGVisualizer:
                     if not frames:
                         kf_result.content = "_No matching keyframes found._"
                         return
-                    lines = [f"**Found {len(frames)} keyframe(s)** (mode: {search_result['mode']})\n"]
+                    lines = [
+                        f"**Found {len(frames)} keyframe(s)** (mode: {search_result['mode']})\n"
+                    ]
                     for i, f in enumerate(frames):
                         score_val = f.get("llm_score", f.get("score", 0.0))
                         desc_short = (f.get("description", "") or "")[:120]
@@ -1404,7 +1431,10 @@ class KeySGVisualizer:
         self._add_keyframes()
         self._build_gui()
 
-        logger.info("Scene loaded — open http://localhost:{} and refresh if switching scenes.", actual_port)
+        logger.info(
+            "Scene loaded — open http://localhost:{} and refresh if switching scenes.",
+            actual_port,
+        )
         logger.info("Press Ctrl+C to stop.")
         try:
             while True:

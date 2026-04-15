@@ -13,7 +13,7 @@ def create_vlm(config: Optional[Dict[str, Any]] = None) -> Any:
     Args:
         config: Dict with 'provider', 'model', and optionally 'text_model'
             - provider: 'openai', 'ollama', etc. (default: 'openai')
-            - model: Model name (default: 'gpt-5-mini' for openai)
+            - model: Model name (default: 'gpt-5.4' for openai)
             - text_model: Text-only model for ollama
 
     Returns:
@@ -26,12 +26,15 @@ def create_vlm(config: Optional[Dict[str, Any]] = None) -> Any:
 
     if provider in ("openai", "gpt", "openai_api"):
         from models.llm.gpt_vlm import GPT_VLMInterface
-        return GPT_VLMInterface(model=model or "gpt-5-mini")
+
+        return GPT_VLMInterface(model=model or "gpt-5.4")
 
     if provider in ("ollama", "qwen3-vl", "qwen3"):
         from models.llm.ollama_vlm import OllamaVLMInterface
+
         return OllamaVLMInterface(model=model or "qwen3-vl", text_model=text_model)
 
     logger.warning(f"Unknown VLM provider '{provider}', defaulting to OpenAI")
     from models.llm.gpt_vlm import GPT_VLMInterface
-    return GPT_VLMInterface(model=model or "gpt-5-mini")
+
+    return GPT_VLMInterface(model=model or "gpt-5.4")

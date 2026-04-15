@@ -83,6 +83,8 @@ keysg-build dataset.kind=scannet dataset.root_dir=/data/ScanNet/scans/scene0011_
 
 # Replica scene
 keysg-build dataset.kind=replica dataset.root_dir=/data/Replica/room0
+keysg-build dataset.kind=replica dataset.root_dir=data/Replica_RGBD/Replica/room0
+
 
 # HM3DSem scene
 keysg-build dataset.kind=hm3dsem dataset.root_dir=/data/HM3DSem/val/00824-Dd4bFSTQ8gi
@@ -100,6 +102,10 @@ python main_pipeline.py dataset.kind=scannet dataset.root_dir=/data/ScanNet/scan
 
 ```bash
 keysg-vis --scene_dir output/keysg_rag1/ScanNet/scene0011_00
+export https_proxy=http://127.0.0.1:10808
+export http_proxy=http://127.0.0.1:10808
+keysg-vis --scene_dir output/keysg_rag1/Replica/room0
+
 # Open http://localhost:8080
 ```
 
@@ -163,7 +169,7 @@ load:
 
 vlm:
   provider: openai            # openai | ollama
-  model: gpt-5-mini
+  model: gpt-5.4
 
 segmentation:
   fuse_every_k: 10

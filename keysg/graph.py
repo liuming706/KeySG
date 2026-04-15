@@ -192,13 +192,14 @@ class KeySGGraph:
 
     def build_rag_database(
         self,
-        embedding_model: str = "text-embedding-3-small",
+        embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
         compute_visual: bool = True,
         use_cache: bool = True,
+        use_local_embedder: bool = True,
     ) -> None:
         if GraphContextRetriever is None:
             raise RuntimeError("RAG dependencies not available")
-        logger.info("Building RAG database")
+        logger.info("Building RAG database with embedding model: {} (local={})", embedding_model, use_local_embedder)
         self._retriever = GraphContextRetriever(self.output_dir)
         self._retriever.build_chunks()
         self._retriever.compute_embeddings(
@@ -206,6 +207,7 @@ class KeySGGraph:
             use_cache=use_cache,
             compute_frame_visual=compute_visual,
             compute_object_visual=compute_visual,
+            use_local_embedder=use_local_embedder,
         )
         self._retriever.build_faiss_index(use_cache=use_cache)
         self._rag_initialized = True
