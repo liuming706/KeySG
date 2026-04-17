@@ -192,6 +192,8 @@ class SceneSegmentor:
     def _fuse_point_cloud(self) -> o3d.geometry.PointCloud:
         """Fuse dataset frames into a single point cloud."""
         pcd = o3d.geometry.PointCloud()
+        logger.info(f"fuse_every_k={self.fuse_every_k}")
+
         for i in tqdm(range(0, len(self.dataset), self.fuse_every_k), desc="Fusing"):
             rgb, depth, pose = self.dataset[i]
             frame_pcd = self.dataset.create_pcd(rgb, depth, pose)

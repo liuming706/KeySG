@@ -78,6 +78,8 @@ class HDBSCANKeyframeSampler:
         if verbose:
             print(f"HDBSCAN selected {len(selected_indices)} frames.")
         return sorted(selected_indices)
+        # lumen_delete
+        # return [selected_indices[0]]
 
     def _clean_and_scale_features(self, pose_features, verbose=True):
         """
