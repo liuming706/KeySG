@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 import open3d as o3d
 import json
+from loguru import logger
 
 
 class ReplicaDataset:
@@ -32,7 +33,10 @@ class ReplicaDataset:
         self.depth_intrinsics, self.depth_scale = self._load_depth_intrinsics(
             cam_params_path
         )
+        logger.info(f"depth_intrinsics=\n{self.depth_intrinsics}")
+        logger.info(f"depth_scale={self.depth_scale}")
         self.data_list = self._get_data_list()
+        print(f"Loaded {len(self.data_list)} images from {self.root_dir}")
         # Get image shape
         sample_image = self._load_image(self.data_list[0][0])
         self.rgb_H = sample_image.shape[0]

@@ -761,6 +761,10 @@ class KeySGVisualizer:
         # State
         self._color_mode: str = "instance"  # "instance" | "rgb"
         self._flip_z: bool = False
+        self._show_floors: bool = False
+        self._show_rooms: bool = False
+        self._show_objects: bool = True
+        self._show_keyframes: bool = True
         self._grounding_retriever = None  # cached after first query
 
     # ------------------------------------------------------------------
@@ -834,18 +838,21 @@ class KeySGVisualizer:
             pcd = getattr(floor, "pcd", None)
             if pcd is None:
                 continue
-            pts, _ = self._pcd_to_arrays(pcd)
+            pts, rgb_colors = self._pcd_to_arrays(pcd)
             if pts is None:
                 continue
             pts = self._transform_pts(pts)
-            color = np.tile(palette[i % len(palette)], (len(pts), 1))
+            if self._color_mode == "rgb" and rgb_colors is not None:
+                color = rgb_colors
+            else:
+                color = np.tile(palette[i % len(palette)], (len(pts), 1))
             handle = self.server.scene.add_point_cloud(
                 f"/floors/{fid}",
                 points=pts,
                 colors=color,
                 point_size=0.02,
             )
-            handle.visible = False  # off by default
+            handle.visible = self._show_floors
             self._floor_handles[fid] = handle
             centroid = pts.mean(axis=0)
             self.server.scene.add_label(
@@ -860,18 +867,21 @@ class KeySGVisualizer:
             pcd = getattr(room, "pcd", None)
             if pcd is None:
                 continue
-            pts, _ = self._pcd_to_arrays(pcd)
+            pts, rgb_colors = self._pcd_to_arrays(pcd)
             if pts is None:
                 continue
             pts = self._transform_pts(pts)
-            color = np.tile(palette[i % len(palette)], (len(pts), 1))
+            if self._color_mode == "rgb" and rgb_colors is not None:
+                color = rgb_colors
+            else:
+                color = np.tile(palette[i % len(palette)], (len(pts), 1))
             handle = self.server.scene.add_point_cloud(
                 f"/rooms/{rid}",
                 points=pts,
                 colors=color,
                 point_size=0.015,
             )
-            handle.visible = False  # off by default
+            handle.visible = self._show_rooms
             self._room_handles[rid] = handle
 
     def _add_objects(self, color_mode: Optional[str] = None) -> None:
@@ -915,6 +925,7 @@ class KeySGVisualizer:
                 colors=display_color,
                 point_size=0.008,
             )
+            handle.visible = self._show_objects
             self._obj_handles[obj_id] = handle
 
     def _add_keyframes(self) -> None:
@@ -967,6 +978,7 @@ class KeySGVisualizer:
                             image=img,
                             color=(180, 220, 255),
                         )
+                        handle.visible = self._show_keyframes
                         self._frustum_handles[name] = handle
                     except Exception as e:
                         logger.debug("Could not add frustum {}: {}", name, e)
@@ -1185,21 +1197,25 @@ class KeySGVisualizer:
 
             @chk_floors.on_update
             def _(_):
+                self._show_floors = chk_floors.value
                 for h in self._floor_handles.values():
                     h.visible = chk_floors.value
 
             @chk_rooms.on_update
             def _(_):
+                self._show_rooms = chk_rooms.value
                 for h in self._room_handles.values():
                     h.visible = chk_rooms.value
 
             @chk_objects.on_update
             def _(_):
+                self._show_objects = chk_objects.value
                 for h in self._obj_handles.values():
                     h.visible = chk_objects.value
 
             @chk_kf.on_update
             def _(_):
+                self._show_keyframes = chk_kf.value
                 for h in self._frustum_handles.values():
                     h.visible = chk_kf.value
 
@@ -1208,8 +1224,8 @@ class KeySGVisualizer:
                 self._flip_z = chk_flip_z.value
                 self._rebuild_scene()
 
-        # -- Object color mode --
-        with self.server.gui.add_folder("Object Coloring"):
+        # -- Point cloud color mode --
+        with self.server.gui.add_folder("Point Cloud Coloring"):
             color_mode_dd = self.server.gui.add_dropdown(
                 "Color Mode",
                 options=["Instance Segments", "RGB"],
@@ -1219,7 +1235,7 @@ class KeySGVisualizer:
             @color_mode_dd.on_update
             def _(_):
                 self._color_mode = "rgb" if color_mode_dd.value == "RGB" else "instance"
-                self._add_objects(color_mode=self._color_mode)
+                self._rebuild_scene()
 
         # -- Manual bbox by object ID --
         with self.server.gui.add_folder("Draw BBox by ID"):

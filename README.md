@@ -84,6 +84,9 @@ keysg-build dataset.kind=scannet dataset.root_dir=/data/ScanNet/scans/scene0011_
 # Replica scene
 keysg-build dataset.kind=replica dataset.root_dir=/data/Replica/room0
 keysg-build dataset.kind=replica dataset.root_dir=data/Replica_RGBD/Replica/room0
+keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/3dgs_pred
+keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/Replica_webots/webots
+keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/Replica_unova/unova
 
 
 # HM3DSem scene
@@ -105,6 +108,9 @@ keysg-vis --scene_dir output/keysg_rag1/ScanNet/scene0011_00
 export https_proxy=http://127.0.0.1:10808
 export http_proxy=http://127.0.0.1:10808
 keysg-vis --scene_dir output/keysg_rag1/Replica/room0
+keysg-vis --scene_dir output/keysg_rag1/Replica/3dgs_pred
+keysg-vis --scene_dir output/keysg_rag1/Replica/webots
+keysg-vis --scene_dir output/keysg_rag1/Replica/unova
 
 # Open http://localhost:8080
 ```
