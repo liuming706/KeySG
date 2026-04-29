@@ -26,7 +26,7 @@ vlm:
 
 # Scene segmentation parameters
 segmentation:
-  fuse_every_k: 10 # Fuse point clouds every K frames (memory optimization)
+  fuse_every_k: 5 # Fuse point clouds every K frames (memory optimization)
   voxel_size: 0.05 # Voxel grid resolution for downsampling (meters)
   grid_resolution: 0.1 # Grid resolution for floor detection (meters)
   save_intermediate: true # Save intermediate segmentation results

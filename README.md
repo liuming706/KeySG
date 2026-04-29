@@ -82,11 +82,18 @@ Download `hm3d-val-habitat-v0.2.tar`, `hm3d-val-semantic-annots-v0.2.tar`, and `
 keysg-build dataset.kind=scannet dataset.root_dir=/data/ScanNet/scans/scene0011_00
 
 # Replica scene
+# 卡在 2026-04-29 11:50:49 | INFO     | keysg.scene_segmentor.extract_nodes:_initialize_components:118 - [NodesRepo] Loading GroundingSAM2...
+# 需要代理调用模型
+export https_proxy=http://127.0.0.1:10808
+export http_proxy=http://127.0.0.1:10808
+
 keysg-build dataset.kind=replica dataset.root_dir=/data/Replica/room0
 keysg-build dataset.kind=replica dataset.root_dir=data/Replica_RGBD/Replica/room0
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/3dgs_pred
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/Replica_webots/webots
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/Replica_unova/unova
+keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/c2_show
+keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/merged_from_gs_renders
 
 
 # HM3DSem scene
@@ -111,6 +118,9 @@ keysg-vis --scene_dir output/keysg_rag1/Replica/room0
 keysg-vis --scene_dir output/keysg_rag1/Replica/3dgs_pred
 keysg-vis --scene_dir output/keysg_rag1/Replica/webots
 keysg-vis --scene_dir output/keysg_rag1/Replica/unova
+keysg-vis --scene_dir output/keysg_rag1/Replica/c2_show
+keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_renders
+
 
 # Open http://localhost:8080
 ```

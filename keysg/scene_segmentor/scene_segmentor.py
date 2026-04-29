@@ -311,7 +311,7 @@ class SceneSegmentor:
                     self.dataset, selected_indices=room.indices
                 )
                 sampled = sampler.sample_hdbscan(
-                    min_cluster_size=15,
+                    min_cluster_size=3,
                 )
                 room.sparse_indices = sampled if sampled else list(room.indices)
                 logger.info(

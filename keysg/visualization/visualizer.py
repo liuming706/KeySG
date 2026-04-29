@@ -294,7 +294,7 @@ def _run_grounding_query(
     # Phase 1: query analysis
     anchor_objects: List[str] = []
     relation_polarity = None
-    print("DEBUG:1")
+    # print("DEBUG:1")
     try:
         analysis = gpt.structured_prompt(
             f"User query: {query}",
@@ -306,9 +306,9 @@ def _run_grounding_query(
         anchor_objects = analysis.anchor_objects or []
         relation_polarity = getattr(analysis, "relation_polarity", None)
     except Exception:
-        print("DEBUG:2")
+        # print("DEBUG:2")
         target_q = query
-    print("DEBUG:3")
+    # print("DEBUG:3")
     # Phase 2: RAG retrieval (use pre-built retriever if provided)
     if retriever is None:
         retriever = GraphContextRetriever(scene_dir)
@@ -317,7 +317,7 @@ def _run_grounding_query(
             compute_frame_visual=True, compute_object_visual=True
         )
         retriever.build_faiss_index()
-    print("DEBUG:4")
+    # print("DEBUG:4")
     target_results = retriever.search(
         target_q,
         top_k=top_k_objects,
@@ -325,7 +325,7 @@ def _run_grounding_query(
         object_modality="both",
     )
     target_vis = target_results.get("object_visual", [])
-    print("DEBUG:5")
+    # print("DEBUG:5")
     anchor_vis: List = []
     if anchor_objects:
         anchor_query = " ".join(anchor_objects)
@@ -350,7 +350,7 @@ def _run_grounding_query(
         frame_results, top_k_frames, include_visual=True, include_text=False
     )
     top_frame_chunks = [chunk_map[fid] for fid in top_frame_ids if fid in chunk_map]
-    print("6")
+    # print("DEBUG:6")
     pred_id = None
     confidence = 0.0
     reason = "No candidates found"

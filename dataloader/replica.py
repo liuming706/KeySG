@@ -27,9 +27,22 @@ class ReplicaDataset:
             raise FileNotFoundError(f"Root directory {self.root_dir} does not exist.")
         self.transforms = cfg.get("transforms", None)
         # Load intrinsics and scale
-        cam_params_path = os.path.join(
-            os.path.split(self.root_dir)[0], "cam_params.json"
-        )
+        # cam_params_path = os.path.join(
+        #     os.path.split(self.root_dir)[0], "cam_params.json"
+        # )
+
+        parent_dir = os.path.split(self.root_dir)[0]
+        
+        cam_params_path_parent = os.path.join(parent_dir, "cam_params.json")
+        cam_params_path_current = os.path.join(self.root_dir, "cam_params.json")
+        
+        if os.path.exists(cam_params_path_parent):
+            cam_params_path = cam_params_path_parent
+        elif os.path.exists(cam_params_path_current):
+            cam_params_path = cam_params_path_current
+        else:
+            raise FileNotFoundError("cam_params.json not found in parent or current directory")
+
         self.depth_intrinsics, self.depth_scale = self._load_depth_intrinsics(
             cam_params_path
         )
@@ -80,6 +93,8 @@ class ReplicaDataset:
         pose_path = os.path.join(self.root_dir, "traj.txt")
         for file in os.listdir(rgb_dir):
             if file.startswith("frame"):
+                rgb_data_list.append(os.path.join(rgb_dir, file))
+            elif file.startswith("rgb"):
                 rgb_data_list.append(os.path.join(rgb_dir, file))
             elif file.startswith("depth"):
                 depth_data_list.append(os.path.join(rgb_dir, file))
