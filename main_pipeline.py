@@ -459,8 +459,8 @@ class KeySGPipeline:
         """Run the complete pipeline."""
         logger.info("Starting KeySG pipeline...")
         self.setup()
-
-        # Scene Segmentation
+ 
+         # Scene Segmentation
         if self.cfg.load.scene_segmentation:
             self.load_scene_segmentation()
         else:

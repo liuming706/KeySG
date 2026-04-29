@@ -12,6 +12,7 @@ dependencies = [
     "numpy",
     "open3d",
     "viser",
+    "supervision",
     "loguru",
     "omegaconf",
     "hydra-core",
@@ -26,8 +27,10 @@ dependencies = [
     "scipy",
     "scikit-learn",
     "opencv-python",
+    "pycocotools",
     "python-dotenv",
     "sentence-transformers",
+    "transformers",
 ]
 
 [project.scripts]

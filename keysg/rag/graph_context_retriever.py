@@ -330,9 +330,9 @@ class GraphContextRetriever:
             "created": time.time(),
             "total_chunks": len(records),
             "embedding_model": self.embed_model_name,
-            "embedding_backend": "sentence-transformers"
-            if self.embedder_is_local
-            else "openai",
+            "embedding_backend": (
+                "sentence-transformers" if self.embedder_is_local else "openai"
+            ),
             "chunks": records,
         }
         with open(self.meta_path, "w", encoding="utf-8") as f:
@@ -412,7 +412,7 @@ class GraphContextRetriever:
         doc_type_set: Optional[Set[str]] = (
             set(dt.lower() for dt in doc_types) if doc_types else None
         )
-        print("DEBUG:4.1")
+        # print("DEBUG:4.1")
         # Determine if text index needed (any doc type requiring text embedding)
         searching_frames = not doc_type_set or "frame" in doc_type_set
         searching_objects = not doc_type_set or "object" in doc_type_set
@@ -429,7 +429,7 @@ class GraphContextRetriever:
             raise RuntimeError(
                 "Text search requested but embeddings or index are not loaded. Please run compute_embeddings() and build_faiss_index() first."
             )
-        print("DEBUG:4.2")
+        # print("DEBUG:4.2")
         if frame_modality in {"visual", "both"}:
             if (
                 self.frame_visual_index is None
@@ -439,7 +439,7 @@ class GraphContextRetriever:
                 raise RuntimeError(
                     "Frame visual search requested but visual embeddings/index missing. Run compute_embeddings(compute_frame_visual=True) first."
                 )
-        print("DEBUG:4.3")
+        # print("DEBUG:4.3")
         # Ensure object visual embeddings if requested
         if object_modality in {"visual", "both"}:
             try:
@@ -460,7 +460,7 @@ class GraphContextRetriever:
                         "Object visual index unavailable; degrading to text-only for objects."
                     )
                     object_modality = "text"
-        print("DEBUG:4.4")
+        # print("DEBUG:4.4")
         # expanded top-K for initial search if filtering by doc type
         k_search = (
             top_k
@@ -474,16 +474,15 @@ class GraphContextRetriever:
             # Prefer the local embedder by default whenever the configured
             # embedding model is a sentence-transformers model.
             preferred_model = self.embed_model_name or _DEFAULT_EMBED_MODEL
-            prefer_local = (
-                self.embedder_is_local
-                or (preferred_model or "").startswith("sentence-transformers/")
+            prefer_local = self.embedder_is_local or (preferred_model or "").startswith(
+                "sentence-transformers/"
             )
 
             if prefer_local:
                 self._ensure_embedder(preferred_model)
 
             if self.embedder_is_local and self.embedder is not None:
-                print("DEBUG:4.4.1")
+                # print("DEBUG:4.4.1")
                 q_emb = prepare_text_query(
                     None,
                     query,
@@ -491,13 +490,13 @@ class GraphContextRetriever:
                     embedder=self.embedder,
                 )
             else:
-                print("DEBUG:4.4.2")
+                # print("DEBUG:4.4.2")
                 self._ensure_gpt()
                 q_emb = prepare_text_query(
                     self.gpt, query, self.embed_model_name or "text-embedding-3-small"
                 )
             text_results = self.index.search(q_emb, k_search)  # type: ignore
-        print("DEBUG:4.5")
+        # print("DEBUG:4.5")
         # Visual search (frames & objects) via CLIP text query embedding (compute once if needed)
         frame_visual_results: Optional[Tuple[np.ndarray, np.ndarray]] = None
         object_visual_results: Optional[Tuple[np.ndarray, np.ndarray]] = None
@@ -512,7 +511,7 @@ class GraphContextRetriever:
             clip_text_query /= (
                 np.linalg.norm(clip_text_query, axis=1, keepdims=True) + 1e-9
             )
-        print("DEBUG:4.6")
+        # print("DEBUG:4.6")
         # Frames
         if clip_text_query is not None and frame_modality in {"visual", "both"}:
             k_frames = min(
@@ -520,7 +519,7 @@ class GraphContextRetriever:
                 max(k_search, len(self.frame_visual_chunk_indices)),
             )
             frame_visual_results = self.frame_visual_index.search(clip_text_query, k_frames)  # type: ignore
-        print("DEBUG:4.7")
+        # print("DEBUG:4.7")
         # Objects
         if clip_text_query is not None and object_modality in {"visual", "both"}:
             k_objs = min(
