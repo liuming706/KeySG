@@ -94,6 +94,7 @@ keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/da
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/Replica_unova/unova
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/c2_show
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/merged_from_gs_renders
+keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/merged_from_gs_mesh
 
 
 # HM3DSem scene
@@ -120,7 +121,7 @@ keysg-vis --scene_dir output/keysg_rag1/Replica/webots
 keysg-vis --scene_dir output/keysg_rag1/Replica/unova
 keysg-vis --scene_dir output/keysg_rag1/Replica/c2_show
 keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_renders
-
+keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh
 
 # Open http://localhost:8080
 ```
