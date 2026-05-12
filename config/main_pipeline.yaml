@@ -24,9 +24,9 @@ vlm:
   model: gpt-5.4 # OpenAI model or Ollama model name (e.g., qwen3-vl)
   # text_model: gpt-5.4  # Optional separate model for text-only summarization
 
-# Scene segmentation parameters
+  # Scene segmentation parameters
 segmentation:
-  fuse_every_k: 5 # Fuse point clouds every K frames (memory optimization)
+  fuse_every_k: 1 # Fuse point clouds every K frames (memory optimization)
   voxel_size: 0.05 # Voxel grid resolution for downsampling (meters)
   grid_resolution: 0.1 # Grid resolution for floor detection (meters)
   save_intermediate: true # Save intermediate segmentation results
