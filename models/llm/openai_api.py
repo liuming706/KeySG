@@ -196,7 +196,26 @@ class GPTInterface:
             response_format={"type": "json_object"},
         )
         text = self._extract_chat_text(response)
-        return response_model.model_validate_json(text)
+        try:
+            return response_model.model_validate_json(text)
+        except Exception:
+            # LLM returned non-JSON text; try to extract JSON from it
+            import re as _re
+            json_match = _re.search(r'\{.*\}', text, _re.DOTALL)
+            if json_match:
+                try:
+                    return response_model.model_validate_json(json_match.group())
+                except Exception:
+                    pass
+            # Last resort: wrap the raw text into the first string field of the model
+            field_name = next(
+                (f for f, info in response_model.model_fields.items()
+                 if info.annotation is str),
+                None,
+            )
+            if field_name:
+                return response_model(**{field_name: text})
+            raise
 
     def text_prompt(
         self,
@@ -334,10 +353,19 @@ class GPTInterface:
                 return self.client.responses.stream(**api_kwargs)
 
             response = self.client.responses.parse(**api_kwargs)
-            return response.output_parsed
+            parsed = response.output_parsed
+            # If output_parsed is not the expected type, fall back
+            if not isinstance(parsed, response_model):
+                return self._structured_via_chat(
+                    prompt,
+                    response_model=response_model,
+                    model=model,
+                    image=image,
+                    detail=detail,
+                    instructions=instructions,
+                )
+            return parsed
         except Exception as e:
-            if not self._should_fallback_to_chat(e):
-                raise
             return self._structured_via_chat(
                 prompt,
                 response_model=response_model,

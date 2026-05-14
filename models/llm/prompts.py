@@ -12,7 +12,7 @@ def system_instruction_tagging() -> str:
         "- Merge duplicates/synonyms; use the most common name (chair, table, sofa, door, window, wall, floor, cabinet, shelf, monitor, keyboard, mouse, lamp, bin, picture, plant, etc.).\n"
         "- Include fixtures and furniture (doors, windows, walls, floor, ceiling) if visible.\n"
         "- Prefer singular, lowercase form.\n"
-        "- Output strictly as a JSON array of strings."
+        '- Output strictly as a JSON object with a single "tags" key containing an array of strings, e.g. {"tags": ["chair", "table", "wall"]}.'
     )
 
 
@@ -26,7 +26,7 @@ def system_instruction_functional_tagging() -> str:
         "- Exclude object names; list only functional parts (e.g., 'handle' not 'door handle').\n"
         "- Prefer singular, lowercase form.\n"
         "- Do not include object names, even partially, or any verb forms.\n"
-        "- Output strictly as a JSON array of strings."
+        '- Output strictly as a JSON object with a single "functional_tags" key containing an array of strings, e.g. {"functional_tags": ["handle", "knob"]}.'
     )
 
 
