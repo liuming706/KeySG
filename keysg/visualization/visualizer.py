@@ -264,6 +264,8 @@ def _run_grounding_query(
     max_frame_images: int = 4,
     retriever=None,
     objects=None,
+    model_analysis: str = "gpt-5.4",
+    model_selection: str = "gpt-5.4-mini",
 ) -> Dict[str, Any]:
     """RAG retrieval + LLM object selection — mirrors nr3d_eval._run_keysg_rag pipeline."""
     from pydantic import BaseModel, Field
@@ -280,7 +282,10 @@ def _run_grounding_query(
             default=None,
             description="Chosen object ID from candidates; null if none match",
         )
-        reason: str = Field(description="Concise rationale for selection")
+        reason: str = Field(
+            default="",
+            description="Concise rationale for selection",
+        )
         confidence: float = Field(ge=0, le=1, description="Calibrated confidence 0-1")
         rejected_ids: List[str] = Field(
             default_factory=list, description="IDs considered but rejected"
@@ -299,7 +304,7 @@ def _run_grounding_query(
         analysis = gpt.structured_prompt(
             f"User query: {query}",
             response_model=_QuerySchema,
-            model="gpt-5.4",
+            model=model_analysis,
             instructions=_QUERY_ANALYSIS_INSTRUCTIONS,
         )
         target_q = analysis.target_object or query
@@ -396,7 +401,7 @@ def _run_grounding_query(
             sel = gpt.structured_prompt(
                 context_text,
                 response_model=ObjectSelection,
-                model="gpt-5.4-mini",
+                model=model_selection,
                 image=frame_images if frame_images else None,
                 detail="high",
                 instructions=_OBJECT_SELECTION_SYSTEM_PROMPT,
@@ -480,6 +485,7 @@ def _run_keyframe_search(
     max_frame_images: int = 10,
     retriever=None,
     objects=None,
+    model: str = "gpt-5.4-mini",
 ) -> Dict[str, Any]:
     """Search keyframes by query with two modes.
 
@@ -576,7 +582,7 @@ def _run_keyframe_search(
         ranking = gpt.structured_prompt(
             context_text,
             response_model=FrameRanking,
-            model="gpt-5.4-mini",
+            model=model,
             image=frame_images if frame_images else None,
             detail="high",
             instructions=_FRAME_RERANK_SYSTEM_PROMPT,
@@ -612,6 +618,8 @@ def _run_open_qa(
     max_frame_images: int = 4,
     retriever=None,
     objects=None,
+    model_analysis: str = "gpt-5.4",
+    model_answer: str = "gpt-5.4",
 ) -> Dict[str, Any]:
     """RAG retrieval + LLM for open-ended scene questions — same context pipeline as grounding."""
     from pydantic import BaseModel, Field
@@ -640,7 +648,7 @@ def _run_open_qa(
         analysis = gpt.structured_prompt(
             f"User query: {question}",
             response_model=_QuerySchema,
-            model="gpt-5.4",
+            model=model_analysis,
             instructions=_QUERY_ANALYSIS_INSTRUCTIONS,
         )
         target_q = analysis.target_object or question
@@ -717,12 +725,15 @@ def _run_open_qa(
         resp = gpt.structured_prompt(
             context_text,
             response_model=SceneAnswer,
-            model="gpt-5.4",
+            model=model_answer,
             image=frame_images if frame_images else None,
             detail="high",
             instructions=_OPEN_QA_SYSTEM_PROMPT,
         )
-        return resp.model_dump()
+        if isinstance(resp, SceneAnswer):
+            return resp.model_dump()
+        # resp is raw text; wrap it
+        return {"answer": str(resp), "reasoning": "", "relevant_object_ids": []}
     except Exception as e:
         logger.warning("Open-ended QA failed: {}", e)
         return {"answer": str(e), "reasoning": "", "relevant_object_ids": []}
@@ -736,9 +747,10 @@ def _run_open_qa(
 class KeySGVisualizer:
     """Interactive Viser visualizer for KeySG scene graphs."""
 
-    def __init__(self, scene_dir: str, port: int = 8080):
+    def __init__(self, scene_dir: str, port: int = 8080, model: str = "gpt-5.4"):
         self.scene_dir = scene_dir
         self.port = port
+        self.model = model
         self.server: Optional[viser.ViserServer] = None
 
         # Scene data
@@ -1239,15 +1251,39 @@ class KeySGVisualizer:
 
         # -- Manual bbox by object ID --
         with self.server.gui.add_folder("Draw BBox by ID"):
-            bbox_id_input = self.server.gui.add_text("Object ID", initial_value="")
+            # Build sorted list of available object IDs with labels
+            _EXCLUDE = {"wall", "floor", "ceiling"}
+            _available_ids = []
+            for obj in self.objects:
+                label = (getattr(obj, "label", "") or "").lower()
+                if any(e in label for e in _EXCLUDE):
+                    continue
+                pcd = getattr(obj, "pcd", None)
+                if pcd is None or len(pcd.points) < 20:
+                    continue
+                oid = str(getattr(obj, "id", ""))
+                if oid:
+                    _available_ids.append((oid, getattr(obj, "label", oid)))
+            _available_ids.sort(key=lambda x: x[0])
+
+            bbox_id_dd = self.server.gui.add_dropdown(
+                "Object ID",
+                options=[f"{oid} ({label})" for oid, label in _available_ids],
+                initial_value=[f"{oid} ({label})" for oid, label in _available_ids][0]
+                if _available_ids else "--- no objects ---",
+            )
             bbox_id_btn = self.server.gui.add_button("Draw BBox")
             bbox_id_result = self.server.gui.add_markdown(
-                "_Enter an object ID and click Draw BBox._"
+                "_Select an object ID and click Draw BBox._"
             )
 
             @bbox_id_btn.on_click
             def _(_):
-                oid = bbox_id_input.value.strip()
+                selected = bbox_id_dd.value
+                if not selected or selected.startswith("---"):
+                    return
+                # Extract the ID part before the first space/paren
+                oid = selected.split(" (")[0].strip()
                 if not oid:
                     return
                 self._clear_bbox()
@@ -1294,6 +1330,8 @@ class KeySGVisualizer:
                         q,
                         retriever=self._ensure_retriever(),
                         objects=self.objects,
+                        model_analysis=self.model,
+                        model_selection=self.model,
                     )
                     obj_id = result.get("object_id")
                     confidence = result.get("confidence", 0.0)
@@ -1359,6 +1397,8 @@ class KeySGVisualizer:
                         q,
                         retriever=self._ensure_retriever(),
                         objects=self.objects,
+                        model_analysis=self.model,
+                        model_answer=self.model,
                     )
                     answer = response.get("answer", "")
                     reasoning = response.get("reasoning", "")
@@ -1402,6 +1442,7 @@ class KeySGVisualizer:
                         top_k=int(kf_top_k.value),
                         retriever=self._ensure_retriever(),
                         objects=self.objects,
+                        model=self.model,
                     )
                     frames = search_result.get("frames", [])
                     if not frames:
@@ -1472,8 +1513,12 @@ def main() -> None:
     parser.add_argument(
         "--port", "-p", type=int, default=8080, help="Viser server port (default: 8080)"
     )
+    parser.add_argument(
+        "--model", "-m", type=str, default="gpt-5.4",
+        help="OpenAI model name for all LLM calls (default: gpt-5.4)"
+    )
     args = parser.parse_args()
-    KeySGVisualizer(args.scene_dir, port=args.port).run()
+    KeySGVisualizer(args.scene_dir, port=args.port, model=args.model).run()
 
 
 if __name__ == "__main__":

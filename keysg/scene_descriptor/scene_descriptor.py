@@ -306,7 +306,7 @@ class SceneDescriptor:
 
         for idx in room.sparse_indices:
             rgb, depth, pose = self.dataset[idx]
-            rgb_path, _, _ = self.dataset.data_list[idx]
+            rgb_path = self.dataset.data_list[idx][0]
 
             # Find visible nodes
             nodes_in_frame = {}

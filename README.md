@@ -122,6 +122,7 @@ keysg-vis --scene_dir output/keysg_rag1/Replica/unova
 keysg-vis --scene_dir output/keysg_rag1/Replica/c2_show
 keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_renders
 keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh
+keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh --model deepseek-v4-flash
 
 # Open http://localhost:8080
 ```

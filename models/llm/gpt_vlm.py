@@ -32,7 +32,7 @@ from models.llm.prompts import (
 class GPT_VLMInterface:
     """VLM interface using GPTInterface for tagging, describing, and summarizing."""
 
-    def __init__(self, model: str = "gpt-5.4"):
+    def __init__(self, model: str = "deepseek-v4-flash"):
         self.client = GPTInterface()
         self.model = model
 
@@ -53,8 +53,24 @@ class GPT_VLMInterface:
             )
             if isinstance(response, ObjectTag):
                 return response.tags[:max_tags]
+            # Fallback: LLM may return a raw list instead of an ObjectTag object
+            if isinstance(response, list):
+                return response[:max_tags]
         except Exception as e:
             print(f"Error in tag_objects_in_image: {e}")
+            # Try parsing raw JSON list as fallback
+            try:
+                raw = self.client.vision_prompt(
+                    prompt,
+                    image=image,
+                    model=self.model,
+                    instructions=system_instruction_tagging(),
+                )
+                raw_list = json.loads(raw)
+                if isinstance(raw_list, list):
+                    return raw_list[:max_tags]
+            except Exception:
+                pass
         return []
 
     def tag_functional_elements_in_image(
@@ -74,8 +90,24 @@ class GPT_VLMInterface:
             )
             if isinstance(response, FunctionalTag):
                 return response.functional_tags[:max_tags]
+            # Fallback: LLM may return a raw list instead of a FunctionalTag object
+            if isinstance(response, list):
+                return response[:max_tags]
         except Exception as e:
             print(f"Error in tag_functional_elements_in_image: {e}")
+            # Try parsing raw JSON list as fallback
+            try:
+                raw = self.client.vision_prompt(
+                    prompt,
+                    image=image,
+                    model=self.model,
+                    instructions=system_instruction_functional_tagging(),
+                )
+                raw_list = json.loads(raw)
+                if isinstance(raw_list, list):
+                    return raw_list[:max_tags]
+            except Exception:
+                pass
         return []
 
     def describe_image(self, image: Image.Image) -> Dict[str, Any]:
