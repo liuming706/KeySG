@@ -47,6 +47,7 @@ class NodesRepo:
         dataset: Any,
         clip_config: Dict[str, Any],
         gsam2_config: Optional[Dict[str, Any]] = None,
+        vlm_config: Optional[Dict[str, Any]] = None,
         tags: str = "",
         fun_tags: str = "",
         selected_frame_indices: Optional[List[int]] = None,
@@ -56,6 +57,7 @@ class NodesRepo:
         self.dataset = dataset
         self.clip_config = clip_config
         self.gsam2_config = gsam2_config or {}
+        self.vlm_config = vlm_config
         self.tags = tags
         self.fun_tags = fun_tags
         self.selected_frame_indices = selected_frame_indices or []
@@ -112,12 +114,13 @@ class NodesRepo:
     def _initialize_components(self) -> None:
         """Initialize shared model instances."""
         # Initialize VLM for functional element tagging
-        self.vlm = GPT_VLMInterface()
-
+        self.vlm = GPT_VLMInterface(self.vlm_config.get("model", "deepseek-v4-flash"))
+        print(f"self.vlm: {self.vlm_config.get('model', 'deepseek-v4-flash')}")
         if NodesRepo._shared_segmentor is None:
             logger.info("[NodesRepo] Loading GroundingSAM2...")
-            cfg = self.gsam2_config
-            gsam_kwargs = self._build_gsam_kwargs(cfg, "llmdet")
+            gsam2_cfg = self.gsam2_config
+            vlm_cfg = self.vlm_config
+            gsam_kwargs = self._build_gsam_kwargs(gsam2_cfg, vlm_cfg, "llmdet")
             NodesRepo._shared_segmentor = GroundingSAM2(**gsam_kwargs)
         self.gsam2 = NodesRepo._shared_segmentor
 
@@ -126,16 +129,21 @@ class NodesRepo:
             NodesRepo._shared_clip = CLIPFeatureExtractor(dict(self.clip_config))
         self.clip_extractor = NodesRepo._shared_clip
 
-    def _build_gsam_kwargs(self, cfg: Dict, detection_mode: str) -> Dict[str, Any]:
+    def _build_gsam_kwargs(
+        self, gsam2_cfg: Dict, vlm_cfg: Dict, detection_mode: str
+    ) -> Dict[str, Any]:
         """Build kwargs for GroundingSAM2 initialization."""
         return {
-            "sam2_checkpoint": cfg.get(
+            "sam2_checkpoint": gsam2_cfg.get(
                 "sam2_checkpoint", "./checkpoints/sam2.1_hiera_large.pt"
             ),
-            "sam2_model_config": cfg.get(
+            "sam2_model_config": gsam2_cfg.get(
                 "sam2_model_config", "sam2.1/sam2.1_hiera_l.yaml"
             ),
-            "llmdet_model_id": cfg.get("llmdet_model_id", "iSEE-Laboratory/llmdet_large"),
+            "llmdet_model_id": gsam2_cfg.get(
+                "llmdet_model_id", "iSEE-Laboratory/llmdet_large"
+            ),
+            "vlm_model": vlm_cfg.get("model", "deepseek-v4-flash"),
         }
 
     def extract_initial_nodes(
@@ -294,7 +302,9 @@ class NodesRepo:
             fun_nodes = self._segment_and_merge_functional_elements(
                 merged, post_hoc_iou_thresh, post_hoc_sim_thresh, radius
             )
-            self._denoise_nodes(fun_nodes, eps=denoise_eps, min_points=denoise_min_points)
+            self._denoise_nodes(
+                fun_nodes, eps=denoise_eps, min_points=denoise_min_points
+            )
 
             # Assign functional elements back to their objects
             merged = self._assign_functional_elements_to_objects(
@@ -334,7 +344,9 @@ class NodesRepo:
             best_match, best_sim = None, 0.0
 
             for existing in merged:
-                sim = self._compute_geometric_similarity(node, existing, radius, iou_threshold=0.05)
+                sim = self._compute_geometric_similarity(
+                    node, existing, radius, iou_threshold=0.05
+                )
                 if sim > best_sim:
                     best_sim, best_match = sim, existing
 
@@ -391,7 +403,9 @@ class NodesRepo:
             if iou <= iou_threshold:
                 break
             if kept[i] and kept[j]:
-                sim = self._compute_geometric_similarity(nodes[i], nodes[j], radius, iou_threshold)
+                sim = self._compute_geometric_similarity(
+                    nodes[i], nodes[j], radius, iou_threshold
+                )
                 if sim > similarity_threshold:
                     self._fuse_nodes(nodes[j], nodes[i], node_counts)
                     kept[i] = False
@@ -436,7 +450,7 @@ class NodesRepo:
             self._functional_elements_detector = GroundingSAM2(**fun_kwargs)
         elif method in ("sparse_tags", "dense_tags") and not self.fun_tags:
             if self.vlm is None:
-                self.vlm = GPT_VLMInterface()
+                self.vlm = GPT_VLMInterface(self.vlm_config.get("model", "deepseek-v4-flash"))
 
     def _segment_and_merge_functional_elements(
         self,

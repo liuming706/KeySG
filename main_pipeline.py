@@ -396,6 +396,7 @@ class KeySGPipeline:
                 fun_tags=fun_tags,
                 clip_config=dict(DEFAULT_CLIP_CONFIG),
                 gsam2_config=getattr(self.cfg.nodes, "gsam2", {}),
+                vlm_config=getattr(self.cfg, "vlm", {}),
                 selected_frame_indices=frame_indices,
                 functional_elements_method=functional_elements_method,
                 output_dir=room_output_dir,
@@ -464,8 +465,8 @@ class KeySGPipeline:
         """Run the complete pipeline."""
         logger.info("Starting KeySG pipeline...")
         self.setup()
- 
-         # Scene Segmentation
+
+        # Scene Segmentation
         if self.cfg.load.scene_segmentation:
             self.load_scene_segmentation()
         else:
@@ -503,6 +504,104 @@ class KeySGPipeline:
             "num_objects": len(self.object_nodes),
             "keysg_graph": self.keysg_graph,
         }
+
+    def _label_keyframes(self) -> None:
+        """Label keyframes by matching GSAM2 detections to projected 3D objects."""
+        intrinsics = getattr(self.dataset, "rgb_intrinsics", None)
+        if intrinsics is None:
+            intrinsics = self.dataset.depth_intrinsics.copy()
+            depth_h, depth_w = self.dataset.depth_H, self.dataset.depth_W
+            rgb_h, rgb_w = self.dataset.rgb_H, self.dataset.rgb_W
+            if depth_h != rgb_h or depth_w != rgb_w:
+                sx, sy = rgb_w / depth_w, rgb_h / depth_h
+                intrinsics[0, 0] *= sx
+                intrinsics[0, 2] *= sx
+                intrinsics[1, 1] *= sy
+                intrinsics[1, 2] *= sy
+
+        # Build a segmentor, reusing the shared instance if available
+        if (
+            self._shared_nodes_repo is not None
+            and self._shared_nodes_repo.gsam2 is not None
+        ):
+            segmentor = self._shared_nodes_repo.gsam2
+        else:
+            cfg = getattr(self.cfg.nodes, "gsam2", {})
+            segmentor = GroundingSAM2(
+                detection_mode="llmdet",
+                sam2_checkpoint=cfg.get(
+                    "sam2_checkpoint", "./checkpoints/sam2.1_hiera_large.pt"
+                ),
+                sam2_model_config=cfg.get(
+                    "sam2_model_config", "sam2_configs/sam2.1/sam2.1_hiera_l.yaml"
+                ),
+                llmdet_model_id=cfg.get(
+                    "llmdet_model_id", "iSEE-Laboratory/llmdet_large"
+                ),
+                vlm_model=self.cfg.vlm.model,
+            )
+
+        total_labeled = 0
+        for floor, rooms in self.floor_rooms:
+            for room in rooms:
+                rid = getattr(room, "id", None)
+                fid = getattr(room, "floor_id", getattr(floor, "floor_id", "0"))
+                if not rid or not room.sparse_indices or not room.objects:
+                    continue
+
+                out_dir = os.path.join(
+                    self.output_dir,
+                    "segmentation",
+                    f"floor_{fid}",
+                    f"room_{rid}",
+                    "labeled_keyframes",
+                )
+                os.makedirs(out_dir, exist_ok=True)
+
+                # Collect unique labels from all objects (split multi-labels on comma)
+                all_labels = set()
+                for obj in room.objects:
+                    for part in str(getattr(obj, "label", "")).split(","):
+                        tag = part.strip()
+                        if tag:
+                            all_labels.add(tag)
+                text_prompt = ". ".join(sorted(all_labels)) + "."
+
+                for idx in room.sparse_indices:
+                    rgb, _, pose = self.dataset[idx]
+                    h, w = rgb.shape[:2]
+
+                    # 1) Project 3D object PCDs → 2D masks for visible objects
+                    obj_masks = project_objects_to_masks(
+                        room.objects,
+                        pose,
+                        intrinsics,
+                        h,
+                        w,
+                    )
+                    if not obj_masks:
+                        continue
+
+                    # 2) Run segmentor to get 2D detection masks
+                    det_results = segmentor.predict(
+                        image=rgb, text_prompt=text_prompt, box_threshold=0.2
+                    )
+                    if len(det_results["masks"]) == 0:
+                        continue
+
+                    # 3) Match each detection to the best-overlapping projected object
+                    matches = match_detections_to_objects(
+                        det_results["masks"], obj_masks
+                    )
+
+                    # 4) Draw only ID + label text (no masks or bboxes)
+                    img = draw_id_labels(rgb, det_results["masks"], matches)
+
+                    out_path = os.path.join(out_dir, f"frame_{idx:06d}.png")
+                    cv2.imwrite(out_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                    total_labeled += 1
+
+        logger.info("Labeled {} keyframes with object IDs", total_labeled)
 
     def _run_object_descriptions(self) -> None:
         """Describe each object in all rooms and save updated nodes to disk.

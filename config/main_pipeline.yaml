@@ -21,7 +21,7 @@ load:
 # Vision-language model configuration for room descriptions
 vlm:
   provider: openai # openai | ollama
-  model: deepseek-v4-flash # OpenAI model or Ollama model name (e.g., qwen3-vl)
+  model: qwen3.6-plus # OpenAI model or Ollama model name (e.g., qwen3-vl)
   # text_model: sensenova-6.7-flash-lite  # Optional separate model for text-only summarization
 
   # Scene segmentation parameters

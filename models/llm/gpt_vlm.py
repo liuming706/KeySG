@@ -206,7 +206,7 @@ class GPT_VLMInterface:
             response = self.client.structured_prompt(
                 prompt=prompt,
                 response_model=SceneSummary,
-                model="gpt-5-mini",
+                model=self.model,
                 instructions=sys_inst,
                 reasoning_effort="medium",
             )
@@ -221,8 +221,8 @@ class GPT_VLMInterface:
                 )
                 return self.client.text_prompt(
                     fallback_prompt,
-                    model="gpt-5-mini",
-                    instructions=sys_inst,
+                    model=self.model,
+                    instructions=system_instruction_summary(),
                 )
             except Exception as fallback_e:
                 print(f"Fallback summarization also failed: {fallback_e}")
@@ -254,7 +254,7 @@ class GPT_VLMInterface:
             response = self.client.structured_prompt(
                 prompt=prompt,
                 response_model=SceneSummary,
-                model="gpt-5.4",
+                model=self.model,
                 instructions=system_instruction_grounding(),
                 reasoning_effort="medium",
             )
@@ -309,7 +309,7 @@ class GPT_VLMInterface:
             response = self.client.structured_prompt(
                 prompt=prompt,
                 response_model=FloorSummaryOutput,
-                model="gpt-5.4",
+                model=self.model,
                 instructions=system_instruction_floor_summary(),
                 reasoning_effort="medium",
             )
@@ -498,7 +498,9 @@ class GPT_VLMInterface:
         )
         return [r.tags[:max_tags] if isinstance(r, ObjectTag) else [] for r in results]
 
-    async def _batch_tag_functional(self, images: List[Image.Image], max_tags: int) -> List[List[str]]:
+    async def _batch_tag_functional(
+        self, images: List[Image.Image], max_tags: int
+    ) -> List[List[str]]:
         prompts = [
             "List all functional control/interaction elements visible in this image (e.g., handle, knob, ..) , never include object names, even partially."
             f"Cap at {max_tags} items."
@@ -519,7 +521,10 @@ class GPT_VLMInterface:
         ]
 
     async def _batch_describe(self, images: List[Image.Image]) -> List[Dict[str, Any]]:
-        prompts = ["Describe this single RGB image for a scene understanding task." for _ in images]
+        prompts = [
+            "Describe this single RGB image for a scene understanding task."
+            for _ in images
+        ]
         results = await self.client.structured_prompt_batch(
             prompts=prompts,
             response_model=ImageDescription,

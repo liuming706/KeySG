@@ -80,6 +80,7 @@ class SceneSegmentor:
         skip_segmentation = getattr(self.dataset, "name", None) not in [
             "HMP3D",
             "AzureRGBD",
+            "Replica",
         ]
 
         if skip_segmentation:
@@ -311,7 +312,7 @@ class SceneSegmentor:
                     self.dataset, selected_indices=room.indices
                 )
                 sampled = sampler.sample_hdbscan(
-                    min_cluster_size=2,
+                    min_cluster_size=10,
                 )
                 room.sparse_indices = sampled if sampled else list(room.indices)
                 logger.info(

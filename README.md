@@ -115,7 +115,7 @@ python main_pipeline.py dataset.kind=scannet dataset.root_dir=/data/ScanNet/scan
 keysg-vis --scene_dir output/keysg_rag1/ScanNet/scene0011_00
 export https_proxy=http://127.0.0.1:10808
 export http_proxy=http://127.0.0.1:10808
-keysg-vis --scene_dir output/keysg_rag1/Replica/room0
+keysg-vis --scene_dir output/keysg_rag1/Replica/room0 --model deepseek-v4-flash
 keysg-vis --scene_dir output/keysg_rag1/Replica/3dgs_pred
 keysg-vis --scene_dir output/keysg_rag1/Replica/webots
 keysg-vis --scene_dir output/keysg_rag1/Replica/unova

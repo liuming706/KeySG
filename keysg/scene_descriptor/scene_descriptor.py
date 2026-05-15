@@ -91,7 +91,9 @@ class SceneDescriptor:
         if not images:
             return {}
 
-        logger.info(f"Functional tagging {len(images)} frames across {len(rooms)} rooms")
+        logger.info(
+            f"Functional tagging {len(images)} frames across {len(rooms)} rooms"
+        )
         self._ensure_vlm()
 
         try:
@@ -200,7 +202,12 @@ class SceneDescriptor:
             return []
 
         all_labels = [obj.label for obj in objects if obj.label]
-        valid_indices, annotated_images, current_labels, nearby_labels_list = [], [], [], []
+        valid_indices, annotated_images, current_labels, nearby_labels_list = (
+            [],
+            [],
+            [],
+            [],
+        )
 
         for i, node in enumerate(objects):
             if not node.rgb_frames or not node.bboxs_2d:
@@ -215,13 +222,19 @@ class SceneDescriptor:
             valid_indices.append(i)
             annotated_images.append(Image.fromarray(annotated))
             current_labels.append(node.label or "")
-            nearby_labels_list.append([lbl for j, lbl in enumerate(all_labels) if j != i and lbl])
+            nearby_labels_list.append(
+                [lbl for j, lbl in enumerate(all_labels) if j != i and lbl]
+            )
 
         if not annotated_images:
-            logger.warning("Room {}: no valid frames for VLM object description.", room.id)
+            logger.warning(
+                "Room {}: no valid frames for VLM object description.", room.id
+            )
             return objects
 
-        logger.info("VLM-describing {} objects in room {}.", len(annotated_images), room.id)
+        logger.info(
+            "VLM-describing {} objects in room {}.", len(annotated_images), room.id
+        )
         self._ensure_vlm()
 
         try:
@@ -280,7 +293,9 @@ class SceneDescriptor:
             )
             for obj in frame_objects:
                 oid = obj.get("id")
-                if oid and obj.get("confidence", 0.0) > best.get(oid, {}).get("confidence", 0.0):
+                if oid and obj.get("confidence", 0.0) > best.get(oid, {}).get(
+                    "confidence", 0.0
+                ):
                     best[oid] = obj
 
         matched = 0
@@ -295,7 +310,12 @@ class SceneDescriptor:
                 if refined:
                     node.label = refined
 
-        logger.info("{}/{} objects matched from keyframes in room {}.", matched, len(objects), room.id)
+        logger.info(
+            "{}/{} objects matched from keyframes in room {}.",
+            matched,
+            len(objects),
+            room.id,
+        )
         return objects
 
     def _prepare_room_frames(
@@ -312,17 +332,21 @@ class SceneDescriptor:
             nodes_in_frame = {}
             for node in room.objects:
                 if is_pcd_visible_in_frame(
-                    node.pcd, depth, pose,
+                    node.pcd,
+                    depth,
+                    pose,
                     self.dataset.depth_intrinsics,
                     self.dataset.depth_scale,
                 ):
                     nodes_in_frame[node.id] = node.label
 
-            frame_data.append({
-                "index": idx,
-                "path": rgb_path,
-                "node_tags": list(nodes_in_frame.values()),
-            })
+            frame_data.append(
+                {
+                    "index": idx,
+                    "path": rgb_path,
+                    "node_tags": list(nodes_in_frame.values()),
+                }
+            )
             images.append(Image.fromarray(rgb))
             visible_nodes.append(nodes_in_frame)
 
@@ -362,11 +386,13 @@ class SceneDescriptor:
                 parsed = parse_json_best_effort(summary)
                 summary = parsed if parsed else summary
 
-            payload.append({
-                "id": room.id,
-                "room_type": getattr(room, "name", None),
-                "summary": summary,
-            })
+            payload.append(
+                {
+                    "id": room.id,
+                    "room_type": getattr(room, "name", None),
+                    "summary": summary,
+                }
+            )
 
         if not payload:
             return {"floor_caption": "", "rooms": []}
@@ -374,7 +400,11 @@ class SceneDescriptor:
         try:
             result = self.vlm.summarize_floor(payload)
             parsed = parse_json_best_effort(result)
-            return parsed if isinstance(parsed, dict) else {"floor_caption": "", "rooms": []}
+            return (
+                parsed
+                if isinstance(parsed, dict)
+                else {"floor_caption": "", "rooms": []}
+            )
         except Exception as e:
             logger.error(f"Floor summarization failed: {e}")
             return {"floor_caption": "", "rooms": []}
@@ -442,11 +472,13 @@ class SceneDescriptor:
             with open(out_path, "w") as f:
                 json.dump(sanitize_for_json(payload), f, indent=2)
 
-            scene_index["rooms"].append({
-                "id": room.id,
-                "floor_id": room.floor_id,
-                "vlm_path": out_path,
-            })
+            scene_index["rooms"].append(
+                {
+                    "id": room.id,
+                    "floor_id": room.floor_id,
+                    "vlm_path": out_path,
+                }
+            )
 
         idx_path = os.path.join(base_dir, "scene_description_index.json")
         with open(idx_path, "w") as f:
