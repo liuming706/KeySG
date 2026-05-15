@@ -392,6 +392,7 @@ class KeySGPipeline:
                 fun_tags=fun_tags,
                 clip_config=dict(DEFAULT_CLIP_CONFIG),
                 gsam2_config=getattr(self.cfg.nodes, "gsam2", {}),
+                vlm_config=getattr(self.cfg, "vlm", {}),
                 selected_frame_indices=frame_indices,
                 functional_elements_method=functional_elements_method,
                 output_dir=room_output_dir,
@@ -459,8 +460,8 @@ class KeySGPipeline:
         """Run the complete pipeline."""
         logger.info("Starting KeySG pipeline...")
         self.setup()
- 
-         # Scene Segmentation
+
+        # Scene Segmentation
         if self.cfg.load.scene_segmentation:
             self.load_scene_segmentation()
         else:
@@ -535,6 +536,7 @@ class KeySGPipeline:
                 llmdet_model_id=cfg.get(
                     "llmdet_model_id", "iSEE-Laboratory/llmdet_large"
                 ),
+                vlm_model=self.cfg.vlm.model,
             )
 
         total_labeled = 0

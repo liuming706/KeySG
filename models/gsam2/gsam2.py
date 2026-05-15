@@ -45,6 +45,7 @@ class GroundingSAM2:
         sam2_checkpoint: str,
         sam2_model_config: str,
         llmdet_model_id: str,
+        vlm_model: str = "deepseek-v4-flash",
         device: Optional[str] = None,
         force_cpu: bool = False,
         llmdet_max_tags_per_batch: int = 30,
@@ -53,6 +54,8 @@ class GroundingSAM2:
         self.sam2_model_config = sam2_model_config
         self.llmdet_model_id = llmdet_model_id
         self.llmdet_max_tags_per_batch = llmdet_max_tags_per_batch
+        self.vlm_model = vlm_model
+        print(f"vlm_model: {vlm_model}")
         self._vlm_client = None
 
         if device is not None:
@@ -89,7 +92,7 @@ class GroundingSAM2:
 
     def _ensure_vlm_client(self):
         if self._vlm_client is None:
-            self._vlm_client = VLMInterface()
+            self._vlm_client = VLMInterface(self.vlm_model)
 
     def predict(
         self,
