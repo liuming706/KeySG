@@ -77,6 +77,8 @@ class HDBSCANKeyframeSampler:
 
         if verbose:
             print(f"HDBSCAN selected {len(selected_indices)} frames.")
+        if not selected_indices:
+            return []
         return sorted(selected_indices)
         # lumen_delete
         # return [selected_indices[0]]

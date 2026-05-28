@@ -10,8 +10,8 @@ dependencies:
 
   # pip-only packages
   - pip:
-    - --index-url https://pypi.tuna.tsinghua.edu.cn/simple
-    - --trusted-host pypi.tuna.tsinghua.edu.cn
+    #- --index-url https://pypi.tuna.tsinghua.edu.cn/simple
+    #- --trusted-host pypi.tuna.tsinghua.edu.cn
     # Core package (installs keysg-build / keysg-vis entry points)
 
     # torch and related

@@ -528,7 +528,7 @@ class KeySGPipeline:
         else:
             cfg = getattr(self.cfg.nodes, "gsam2", {})
             segmentor = GroundingSAM2(
-                detection_mode="llmdet",
+                detection_mode=cfg.get("detection_mode", "llmdet"),
                 sam2_checkpoint=cfg.get(
                     "sam2_checkpoint", "./checkpoints/sam2.1_hiera_large.pt"
                 ),
@@ -539,6 +539,8 @@ class KeySGPipeline:
                     "llmdet_model_id", "iSEE-Laboratory/llmdet_large"
                 ),
                 vlm_model=self.cfg.vlm.model,
+                device=cfg.get("device", None),
+                force_cpu=cfg.get("force_cpu", False),
             )
 
         total_labeled = 0

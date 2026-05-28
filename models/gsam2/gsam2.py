@@ -48,7 +48,7 @@ class GroundingSAM2:
         vlm_model: str = "deepseek-v4-flash",
         device: Optional[str] = None,
         force_cpu: bool = False,
-        llmdet_max_tags_per_batch: int = 80,
+        llmdet_max_tags_per_batch: int = 80,  # 30 会爆 8GB 显存
     ):
         self.sam2_checkpoint = sam2_checkpoint
         self.sam2_model_config = sam2_model_config
@@ -64,6 +64,7 @@ class GroundingSAM2:
             self.device = (
                 "cuda" if torch.cuda.is_available() and not force_cpu else "cpu"
             )
+        print(f"GroundingSAM2 device: {self.device}")
 
         self._setup_environment()
         self._load_sam2()

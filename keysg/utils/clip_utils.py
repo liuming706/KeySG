@@ -8,15 +8,16 @@ import torch.nn.functional as F
 from open_clip import create_model_from_pretrained, get_tokenizer
 from PIL import Image
 
-
 # Default configuration
 DEFAULT_CLIP_CONFIG = {
     # "model_name": "hf-hub:apple/DFN5B-CLIP-ViT-H-14-384",
     # "model_name": "ViT-B-32",
+    # "pretrained": "laion2b_s34b_b79k",
     # "model_name": "ViT-H-14",
     "model_name": "hf-hub:timm/ViT-gopt-16-SigLIP2-384",
     "pretrained": "laion2b_s32b_b79k",
-    "device": "cuda",
+    "device": "cpu",
+    "force_cpu": False,
 }
 
 

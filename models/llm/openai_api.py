@@ -26,7 +26,7 @@ class GPTInterface:
 
     def __init__(self, client: Optional[openai.OpenAI] = None):
         # self.client = client or openai.OpenAI()
-        custom_client = httpx.Client(timeout=30, proxy="http://127.0.0.1:10808")
+        custom_client = httpx.Client(timeout=120, proxy="http://127.0.0.1:10808")
         self.client = openai.OpenAI(http_client=custom_client)
 
     def _encode_image(
@@ -201,7 +201,8 @@ class GPTInterface:
         except Exception:
             # LLM returned non-JSON text; try to extract JSON from it
             import re as _re
-            json_match = _re.search(r'\{.*\}', text, _re.DOTALL)
+
+            json_match = _re.search(r"\{.*\}", text, _re.DOTALL)
             if json_match:
                 try:
                     return response_model.model_validate_json(json_match.group())
@@ -209,8 +210,11 @@ class GPTInterface:
                     pass
             # Last resort: wrap the raw text into the first string field of the model
             field_name = next(
-                (f for f, info in response_model.model_fields.items()
-                 if info.annotation is str),
+                (
+                    f
+                    for f, info in response_model.model_fields.items()
+                    if info.annotation is str
+                ),
                 None,
             )
             if field_name:

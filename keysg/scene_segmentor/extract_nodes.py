@@ -144,6 +144,8 @@ class NodesRepo:
                 "llmdet_model_id", "iSEE-Laboratory/llmdet_large"
             ),
             "vlm_model": vlm_cfg.get("model", "deepseek-v4-flash"),
+            "device": gsam2_cfg.get("device", self.clip_config.get("device")),
+            "force_cpu": gsam2_cfg.get("force_cpu", False),
         }
 
     def extract_initial_nodes(
@@ -450,7 +452,9 @@ class NodesRepo:
             self._functional_elements_detector = GroundingSAM2(**fun_kwargs)
         elif method in ("sparse_tags", "dense_tags") and not self.fun_tags:
             if self.vlm is None:
-                self.vlm = GPT_VLMInterface(self.vlm_config.get("model", "deepseek-v4-flash"))
+                self.vlm = GPT_VLMInterface(
+                    self.vlm_config.get("model", "deepseek-v4-flash")
+                )
 
     def _segment_and_merge_functional_elements(
         self,

@@ -21,7 +21,7 @@ load:
 # Vision-language model configuration for room descriptions
 vlm:
   provider: openai # openai | ollama
-  model: qwen3.6-plus # OpenAI model or Ollama model name (e.g., qwen3-vl)
+  model: gpt-5.5 # OpenAI model or Ollama model name (e.g., qwen3-vl)
   # text_model: sensenova-6.7-flash-lite  # Optional separate model for text-only summarization
 
   # Scene segmentation parameters
@@ -54,6 +54,7 @@ nodes:
   save_visualizations: true        # Save visualization files (.ply format)
   # GroundingSAM2 configuration passed to NodesRepo
   gsam2:
+    device: cpu # Device for GroundingSAM2/CLIP: null = auto, cuda, cpu, cuda:0, etc.
     detection_mode: llmdet # llmdet | grounding_dino | owlv2
     sam2_checkpoint: ./checkpoints/sam2.1_hiera_large.pt
     sam2_model_config: sam2_configs/sam2.1/sam2.1_hiera_l.yaml
