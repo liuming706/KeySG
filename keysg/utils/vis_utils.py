@@ -23,6 +23,7 @@ LABEL_BACKGROUND_ALPHA = 0.45
 LABEL_TEXT_ALPHA = 0.75
 LABEL_LEADER_LINE_COLOR = (255, 255, 0)
 LABEL_ANCHOR_COLOR = (255, 255, 0)
+MASK_OVERLAY_ALPHA = 0.35
 
 
 def _draw_transparent_rectangle(
@@ -944,18 +945,20 @@ def draw_id_labels(
     det_masks: np.ndarray,
     matches: List[Tuple[int, Any, float]],
 ) -> np.ndarray:
-    """Draw readable object ID/label annotations with overlap-aware placement.
+    """Draw colored mask overlays and readable object ID/label annotations.
 
     Instead of always placing text at the mask center, labels are packed around
     their target masks and connected back with a thin leader line.  This greatly
     improves dense ``labeled_keyframes`` where many object labels would otherwise
-    cover one another.
+    cover one another.  Each matched mask is visualized with a distinct color so
+    different object regions are easy to distinguish in ``labeled_keyframes``.
     """
     out = img.copy()
     h, w = out.shape[:2]
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale, thickness = 0.5, 1
     placed_rects: List[Tuple[int, int, int, int]] = []
+    mask_colors = (generate_colors(max(len(matches), 1)) * 255).astype(np.uint8)
 
     # Draw larger masks first; small/nearby labels can then route around them.
     sorted_matches = sorted(
@@ -964,12 +967,24 @@ def draw_id_labels(
         reverse=True,
     )
 
-    for det_idx, obj, _ in sorted_matches:
+    # Draw semi-transparent colored masks first so labels remain on top.
+    for color_idx, (det_idx, _, _) in enumerate(sorted_matches):
+        mask = det_masks[det_idx].astype(bool)
+        if not np.any(mask):
+            continue
+        color = mask_colors[color_idx % len(mask_colors)]
+        out[mask] = (
+            out[mask].astype(np.float32) * (1.0 - MASK_OVERLAY_ALPHA)
+            + color.astype(np.float32) * MASK_OVERLAY_ALPHA
+        ).astype(np.uint8)
+
+    for color_idx, (det_idx, obj, _) in enumerate(sorted_matches):
         mask = det_masks[det_idx]
         ys, xs = np.where(mask)
         if len(xs) == 0:
             continue
         cx, cy = int(xs.mean()), int(ys.mean())
+        mask_color = tuple(int(c) for c in mask_colors[color_idx % len(mask_colors)])
 
         id_text = str(obj.id)
         label_parts = str(getattr(obj, "label", "")).split(",")
@@ -999,11 +1014,11 @@ def draw_id_labels(
                 out,
                 (cx, cy),
                 (label_cx, label_cy),
-                LABEL_LEADER_LINE_COLOR,
+                mask_color,
                 1,
                 cv2.LINE_AA,
             )
-            cv2.circle(out, (cx, cy), 2, LABEL_ANCHOR_COLOR, -1, cv2.LINE_AA)
+            cv2.circle(out, (cx, cy), 2, mask_color, -1, cv2.LINE_AA)
 
         _draw_transparent_rectangle(
             out,
@@ -1033,10 +1048,9 @@ def draw_id_labels(
             LABEL_TEXT_ALPHA,
         )
 
-        # we could also draw the mask contours:
         contours, _ = cv2.findContours(
             mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
-        cv2.drawContours(out, contours, -1, (0, 255, 255), 1)
+        cv2.drawContours(out, contours, -1, mask_color, 2)
 
     return out
