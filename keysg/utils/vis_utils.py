@@ -17,6 +17,145 @@ import matplotlib.pyplot as plt
 from keysg.scene_segmentor.obj_node import ObjNode
 
 
+LABEL_BACKGROUND_COLOR = (255, 255, 0)
+LABEL_TEXT_COLOR = (0, 0, 0)
+LABEL_BACKGROUND_ALPHA = 0.45
+LABEL_TEXT_ALPHA = 0.75
+LABEL_LEADER_LINE_COLOR = (255, 255, 0)
+LABEL_ANCHOR_COLOR = (255, 255, 0)
+
+
+def _draw_transparent_rectangle(
+    img: np.ndarray,
+    pt1: Tuple[int, int],
+    pt2: Tuple[int, int],
+    color: Tuple[int, int, int],
+    alpha: float,
+) -> None:
+    """Draw a filled rectangle with alpha blending in-place."""
+    h, w = img.shape[:2]
+    x1, y1 = max(0, pt1[0]), max(0, pt1[1])
+    x2, y2 = min(w - 1, pt2[0]), min(h - 1, pt2[1])
+    if x2 <= x1 or y2 <= y1:
+        return
+
+    roi = img[y1:y2, x1:x2]
+    overlay = np.full_like(roi, color, dtype=roi.dtype)
+    cv2.addWeighted(overlay, alpha, roi, 1.0 - alpha, 0, dst=roi)
+
+
+def _draw_transparent_text(
+    img: np.ndarray,
+    text: str,
+    org: Tuple[int, int],
+    font: int,
+    font_scale: float,
+    color: Tuple[int, int, int],
+    thickness: int,
+    alpha: float,
+) -> None:
+    """Draw text with alpha blending in-place."""
+    overlay = img.copy()
+    cv2.putText(
+        overlay,
+        text,
+        org,
+        font,
+        font_scale,
+        color,
+        thickness,
+        cv2.LINE_AA,
+    )
+    cv2.addWeighted(overlay, alpha, img, 1.0 - alpha, 0, dst=img)
+
+
+def _rect_area(rect: Tuple[int, int, int, int]) -> int:
+    """Return area of an axis-aligned rectangle encoded as (x1, y1, x2, y2)."""
+    return max(0, rect[2] - rect[0]) * max(0, rect[3] - rect[1])
+
+
+def _rect_intersection_area(
+    a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]
+) -> int:
+    """Return intersection area between two rectangles."""
+    x1 = max(a[0], b[0])
+    y1 = max(a[1], b[1])
+    x2 = min(a[2], b[2])
+    y2 = min(a[3], b[3])
+    return _rect_area((x1, y1, x2, y2))
+
+
+def _clamp_label_rect(
+    rect: Tuple[int, int, int, int], w: int, h: int, margin: int = 2
+) -> Tuple[int, int, int, int]:
+    """Shift a label rectangle so it stays inside image bounds."""
+    x1, y1, x2, y2 = rect
+    rect_w, rect_h = x2 - x1, y2 - y1
+    max_x1 = max(margin, w - rect_w - margin)
+    max_y1 = max(margin, h - rect_h - margin)
+    x1 = min(max(x1, margin), max_x1)
+    y1 = min(max(y1, margin), max_y1)
+    return x1, y1, x1 + rect_w, y1 + rect_h
+
+
+def _find_non_overlapping_label_rect(
+    anchor: Tuple[int, int],
+    label_size: Tuple[int, int],
+    placed_rects: List[Tuple[int, int, int, int]],
+    w: int,
+    h: int,
+    margin: int = 4,
+) -> Tuple[int, int, int, int]:
+    """Place a label near an anchor while minimizing overlap with previous labels.
+
+    The search checks concentric candidate positions around the anchor.  It
+    returns the first zero-overlap position, or the lowest-cost fallback if all
+    positions collide.  This keeps dense labeled keyframes readable without
+    changing the existing output format.
+    """
+    ax, ay = anchor
+    lw, lh = label_size
+    candidates: List[Tuple[int, int, int, int]] = []
+
+    # Candidate offsets: close first, then progressively farther away.
+    for radius in (0, 12, 28, 48, 72, 104, 140, 184, 232):
+        offsets = [
+            (0, 0),
+            (-lw // 2, -lh - radius),
+            (-lw // 2, radius),
+            (radius, -lh // 2),
+            (-lw - radius, -lh // 2),
+            (radius, -lh - radius),
+            (-lw - radius, -lh - radius),
+            (radius, radius),
+            (-lw - radius, radius),
+        ]
+        for dx, dy in offsets:
+            rect = (ax + dx, ay + dy, ax + dx + lw, ay + dy + lh)
+            candidates.append(_clamp_label_rect(rect, w, h, margin=margin))
+
+    best_rect = candidates[0]
+    best_cost = float("inf")
+    seen = set()
+    for rect in candidates:
+        if rect in seen:
+            continue
+        seen.add(rect)
+        overlap = sum(_rect_intersection_area(rect, prev) for prev in placed_rects)
+        center_x = (rect[0] + rect[2]) / 2.0
+        center_y = (rect[1] + rect[3]) / 2.0
+        distance = ((center_x - ax) ** 2 + (center_y - ay) ** 2) ** 0.5
+        # Strongly prefer no-overlap labels; distance only breaks ties.
+        cost = overlap * 1000.0 + distance
+        if cost < best_cost:
+            best_cost = cost
+            best_rect = rect
+        if overlap == 0:
+            return rect
+
+    return best_rect
+
+
 def generate_colors(num_colors: int) -> np.ndarray:
     """
     Generate distinct colors for visualization using the golden ratio.
@@ -663,7 +802,7 @@ def label_keyframe(
             continue
 
         # color = tuple(int(c) for c in colors[idx])
-        color = (255, 255, 0)
+        color = LABEL_BACKGROUND_COLOR
         # Limit label text to first two commas
         label_raw = str(getattr(obj, "label", ""))
         label_parts = label_raw.split(",")
@@ -691,34 +830,36 @@ def label_keyframe(
         rect_x2 = cx + rect_w // 2
         rect_y2 = cy + rect_h // 2
 
-        cv2.rectangle(
+        _draw_transparent_rectangle(
             img,
             (rect_x1, rect_y1),
             (rect_x2, rect_y2),
             color,
-            -1,
+            LABEL_BACKGROUND_ALPHA,
         )
         # Draw ID (top)
         id_y = cy - rect_h // 2 + idh + 2
-        cv2.putText(
+        _draw_transparent_text(
             img,
             id_text,
             (cx - idw // 2, id_y),
             cv2.FONT_HERSHEY_SIMPLEX,
             font_scale,
-            (0, 0, 0),
+            LABEL_TEXT_COLOR,
             thickness,
+            LABEL_TEXT_ALPHA,
         )
         # Draw label (bottom, with gap)
         label_y = id_y + gap + lh // 2
-        cv2.putText(
+        _draw_transparent_text(
             img,
             label_text,
             (cx - lw // 2, label_y),
             cv2.FONT_HERSHEY_SIMPLEX,
             font_scale,
-            (0, 0, 0),
+            LABEL_TEXT_COLOR,
             thickness,
+            LABEL_TEXT_ALPHA,
         )
 
     return img
@@ -803,15 +944,27 @@ def draw_id_labels(
     det_masks: np.ndarray,
     matches: List[Tuple[int, Any, float]],
 ) -> np.ndarray:
-    """Draw only object ID and label text at the center of each matched mask.
+    """Draw readable object ID/label annotations with overlap-aware placement.
 
-    No bounding boxes or mask overlays are drawn — just readable text for VLMs.
+    Instead of always placing text at the mask center, labels are packed around
+    their target masks and connected back with a thin leader line.  This greatly
+    improves dense ``labeled_keyframes`` where many object labels would otherwise
+    cover one another.
     """
     out = img.copy()
+    h, w = out.shape[:2]
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale, thickness = 0.5, 1
+    placed_rects: List[Tuple[int, int, int, int]] = []
 
-    for det_idx, obj, _ in matches:
+    # Draw larger masks first; small/nearby labels can then route around them.
+    sorted_matches = sorted(
+        matches,
+        key=lambda item: int(np.count_nonzero(det_masks[item[0]])),
+        reverse=True,
+    )
+
+    for det_idx, obj, _ in sorted_matches:
         mask = det_masks[det_idx]
         ys, xs = np.where(mask)
         if len(xs) == 0:
@@ -828,27 +981,56 @@ def draw_id_labels(
         gap = 8
         rw = max(idw, lw) + 6
         rh = idh + lh + gap + 6
-        rx1, ry1 = cx - rw // 2, cy - rh // 2
-        rx2, ry2 = cx + rw // 2, cy + rh // 2
+        rx1, ry1, rx2, ry2 = _find_non_overlapping_label_rect(
+            anchor=(cx, cy),
+            label_size=(rw, rh),
+            placed_rects=placed_rects,
+            w=w,
+            h=h,
+        )
+        placed_rects.append((rx1, ry1, rx2, ry2))
 
-        cv2.rectangle(out, (rx1, ry1), (rx2, ry2), (255, 255, 0), -1)
-        cv2.putText(
+        label_cx = int((rx1 + rx2) / 2)
+        label_cy = int((ry1 + ry2) / 2)
+
+        # Draw a subtle target anchor + leader line when the label is displaced.
+        if abs(label_cx - cx) > rw // 3 or abs(label_cy - cy) > rh // 3:
+            cv2.line(
+                out,
+                (cx, cy),
+                (label_cx, label_cy),
+                LABEL_LEADER_LINE_COLOR,
+                1,
+                cv2.LINE_AA,
+            )
+            cv2.circle(out, (cx, cy), 2, LABEL_ANCHOR_COLOR, -1, cv2.LINE_AA)
+
+        _draw_transparent_rectangle(
+            out,
+            (rx1, ry1),
+            (rx2, ry2),
+            LABEL_BACKGROUND_COLOR,
+            LABEL_BACKGROUND_ALPHA,
+        )
+        _draw_transparent_text(
             out,
             id_text,
-            (cx - idw // 2, ry1 + idh + 2),
+            (label_cx - idw // 2, ry1 + idh + 2),
             font,
             font_scale,
-            (0, 0, 0),
+            LABEL_TEXT_COLOR,
             thickness,
+            LABEL_TEXT_ALPHA,
         )
-        cv2.putText(
+        _draw_transparent_text(
             out,
             label_text,
-            (cx - lw // 2, ry1 + idh + gap + lh + 2),
+            (label_cx - lw // 2, ry1 + idh + gap + lh + 2),
             font,
             font_scale,
-            (0, 0, 0),
+            LABEL_TEXT_COLOR,
             thickness,
+            LABEL_TEXT_ALPHA,
         )
 
         # we could also draw the mask contours:

@@ -12,6 +12,11 @@ dataset:
 # Output directory for all pipeline results
 output_dir: output/keysg_rag1
 
+# Logging configuration
+logging:
+  level: INFO # Console log level: TRACE | DEBUG | INFO | SUCCESS | WARNING | ERROR | CRITICAL
+  file_level: DEBUG # Per-scene file log level
+
 # Loading configuration - set to true to load existing results instead of recomputing
 load:
   scene_segmentation: false # Load existing floor/room segmentation
@@ -40,18 +45,18 @@ nodes:
   segmentor: gsam2 # Segmentation backend
   object_tags: vlm # Method for object tags: 'vlm' (vision-language model) or 'ram' (RAM++ tagger)
   extract_functional_elements: false # Enable/disable functional element extraction
-  functional_elements_method: sparse_tags  # Method for functional elements: 'sparse_tags' or 'detector' (funGraph model) or 'dense_tags' (per object vlm tags)
-  fun_tags: ""                      # Optional fixed functional element tags (empty = use VLM tagging)
-  use_keyframes_only: true         # true: run detection on keyframes only (sparse_indices) | false: all dense frames subsampled by skip_frames
-  skip_frames: 15                   # Subsample stride when use_keyframes_only=false
-  max_frames: 0                    # Maximum frames per room (0 = use all available)
-  box_threshold: 0.2              # LLMDet box confidence threshold for object detection
-  post_hoc_iou_thresh: 0.05        # IoU threshold for post-processing merging
-  post_hoc_sim_thresh: 0.65         # Similarity threshold for post-processing merging
-  similarity_threshold: 0.5       # Geometric similarity threshold for node merging
-  radius: 0.02                     # Spatial radius for node merging (meters)
-  visualize: true                  # Enable/disable 3D visualization
-  save_visualizations: true        # Save visualization files (.ply format)
+  functional_elements_method: sparse_tags # Method for functional elements: 'sparse_tags' or 'detector' (funGraph model) or 'dense_tags' (per object vlm tags)
+  fun_tags: "" # Optional fixed functional element tags (empty = use VLM tagging)
+  use_keyframes_only: true # true: run detection on keyframes only (sparse_indices) | false: all dense frames subsampled by skip_frames
+  skip_frames: 15 # Subsample stride when use_keyframes_only=false
+  max_frames: 0 # Maximum frames per room (0 = use all available)
+  box_threshold: 0.2 # LLMDet box confidence threshold for object detection
+  post_hoc_iou_thresh: 0.05 # IoU threshold for post-processing merging
+  post_hoc_sim_thresh: 0.65 # Similarity threshold for post-processing merging
+  similarity_threshold: 0.5 # Geometric similarity threshold for node merging
+  radius: 0.02 # Spatial radius for node merging (meters)
+  visualize: true # Enable/disable 3D visualization
+  save_visualizations: true # Save visualization files (.ply format)
   # GroundingSAM2 configuration passed to NodesRepo
   gsam2:
     device: cpu # Device for GroundingSAM2/CLIP: null = auto, cuda, cpu, cuda:0, etc.
@@ -83,11 +88,11 @@ rag:
   use_cache: true # Cache embeddings to avoid recomputation
 
 # Disable hydra loggings
-defaults:  
-  - _self_  
-  - override hydra/hydra_logging: disabled  
-  - override hydra/job_logging: disabled  
-hydra:  
-  output_subdir: null  
-  run:  
+defaults:
+  - _self_
+  - override hydra/hydra_logging: disabled
+  - override hydra/job_logging: disabled
+hydra:
+  output_subdir: null
+  run:
     dir: .

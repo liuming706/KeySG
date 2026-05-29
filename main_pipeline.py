@@ -101,7 +101,11 @@ class KeySGPipeline:
         """Add per-scene file logging."""
         try:
             log_path = os.path.join(self.output_dir, "KeySG.log")
-            logger.add(log_path, level="INFO", rotation="10 MB", retention=3)
+            logging_cfg = getattr(self.cfg, "logging", {})
+            console_level = getattr(logging_cfg, "level", "INFO")
+            file_level = getattr(logging_cfg, "file_level", console_level)
+            file_level = (file_level or console_level or "INFO").upper()
+            logger.add(log_path, level=file_level, rotation="10 MB", retention=3)
             logger.info("Logging to {}", log_path)
         except Exception as e:
             logger.warning("Failed to add file logger: {}", e)
@@ -487,7 +491,8 @@ class KeySGPipeline:
         # Per-object Descriptions (vlm or keyframe).
         # Runs after scene description so both methods have what they need.
         self._run_object_descriptions()
-
+        # mark keyframes with object ids from llmdet and select object ids
+        self._label_keyframes()
         # Build KeySG Graph
         if getattr(self.cfg, "build_rag", True):
             try:
@@ -689,7 +694,10 @@ class KeySGPipeline:
 )
 def main(cfg: DictConfig) -> None:
     """Main entry point."""
-    setup_logging()
+    logging_cfg = getattr(cfg, "logging", {})
+    console_level = getattr(logging_cfg, "level", "INFO")
+    file_level = getattr(logging_cfg, "file_level", console_level)
+    setup_logging(console_level=console_level, file_level=file_level)
     pipeline = KeySGPipeline(cfg)
     pipeline.run()
 

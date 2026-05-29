@@ -8,6 +8,7 @@ import sys
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
+import cv2
 import numpy as np
 import open3d as o3d
 import torch
@@ -219,6 +220,89 @@ class NodesRepo:
     ) -> Optional[ObjNode]:
         """Create an ObjNode from a detection result."""
         bbox_2d = results["boxes"][idx]
+        label = (
+            results.get("labels", [f"object_{idx}"])[idx]
+            if "labels" in results
+            else f"object_{idx}"
+        )
+        score = (
+            results.get("scores", [None] * (idx + 1))[idx]
+            if "scores" in results
+            else None
+        )
+        mask_2d = results.get("masks", [None] * (idx + 1))[idx]
+
+        def _to_python_scalar(value: Any) -> Any:
+            if isinstance(value, torch.Tensor):
+                value = value.detach().cpu()
+                if value.numel() == 1:
+                    return value.item()
+                return value.tolist()
+            if isinstance(value, np.ndarray):
+                if value.size == 1:
+                    return value.item()
+                return value.tolist()
+            return value
+
+        def _format_bbox(bbox: Any) -> List[float]:
+            bbox_list = _to_python_scalar(bbox)
+            return [round(float(v), 2) for v in bbox_list]
+
+        def _mask_array(mask: Any) -> Optional[np.ndarray]:
+            if mask is None:
+                return None
+            if isinstance(mask, torch.Tensor):
+                mask = mask.detach().cpu().numpy()
+            mask = np.asarray(mask)
+            mask = np.squeeze(mask)
+            if mask.ndim != 2:
+                return None
+            return mask
+
+        def _valid_depth_points(mask: Any) -> Optional[int]:
+            mask_arr = _mask_array(mask)
+            if mask_arr is None:
+                return None
+
+            depth_arr = np.asarray(depth_image)
+            if depth_arr.ndim == 3:
+                depth_arr = np.squeeze(depth_arr)
+            if depth_arr.ndim != 2:
+                return None
+
+            if mask_arr.shape != depth_arr.shape:
+                mask_arr = cv2.resize(
+                    mask_arr.astype(np.uint8),
+                    (depth_arr.shape[1], depth_arr.shape[0]),
+                    interpolation=cv2.INTER_NEAREST,
+                )
+
+            depth_scale = float(getattr(self.dataset, "depth_scale", 1000.0))
+            depth_min = float(getattr(self.dataset, "depth_min", 0.0))
+            depth_max = float(getattr(self.dataset, "depth_max", np.inf))
+            depth = depth_arr.astype(np.float32) / depth_scale
+            mask_indices = mask_arr > 0
+            valid_depth = np.logical_and(depth > depth_min, depth < depth_max)
+            return int(np.count_nonzero(np.logical_and(mask_indices, valid_depth)))
+
+        mask_arr = _mask_array(mask_2d)
+        mask_area = int(np.count_nonzero(mask_arr > 0)) if mask_arr is not None else None
+        score_value = _to_python_scalar(score)
+        score_text = f"{float(score_value):.4f}" if score_value is not None else "None"
+        bbox_text = _format_bbox(bbox_2d)
+        valid_depth_count = _valid_depth_points(mask_2d)
+
+        logger.debug(
+            "Detection candidate frame={} idx={} label={!r} score={} bbox={} "
+            "mask_area={} valid_depth_points={}",
+            frame_idx,
+            idx,
+            label,
+            score_text,
+            bbox_text,
+            mask_area,
+            valid_depth_count,
+        )
 
         # Skip near-full-image bboxes
         h, w = rgb_image.shape[:2]
@@ -228,29 +312,87 @@ class NodesRepo:
             and bbox_2d[2] > 0.9 * w
             and bbox_2d[3] > 0.9 * h
         ):
+            logger.debug(
+                "Detection rejected frame={} idx={} label={!r} reason=near_full_image_bbox "
+                "bbox={} image_size=({}, {}) mask_area={} valid_depth_points={}",
+                frame_idx,
+                idx,
+                label,
+                bbox_text,
+                w,
+                h,
+                mask_area,
+                valid_depth_count,
+            )
             return None
 
-        mask_2d = results.get("masks", [None] * (idx + 1))[idx]
-        label = (
-            results.get("labels", [f"object_{idx}"])[idx]
-            if "labels" in results
-            else f"object_{idx}"
-        )
-
         if mask_2d is None:
+            logger.debug(
+                "Detection rejected frame={} idx={} label={!r} reason=missing_mask "
+                "score={} bbox={}",
+                frame_idx,
+                idx,
+                label,
+                score_text,
+                bbox_text,
+            )
             return None
 
         pcd_3d = self.dataset.project_2d_mask_to_3d(
             mask_2d, depth_image, rgb_image, camera_pose
         )
         if pcd_3d is None or pcd_3d.is_empty():
+            logger.debug(
+                "Detection rejected frame={} idx={} label={!r} reason=empty_projected_pcd "
+                "score={} bbox={} mask_area={} valid_depth_points={}",
+                frame_idx,
+                idx,
+                label,
+                score_text,
+                bbox_text,
+                mask_area,
+                valid_depth_count,
+            )
             return None
 
+        projected_points = len(pcd_3d.points)
         pcd_3d = pcd_3d.voxel_down_sample(voxel_size=0.01)
+        downsampled_points = len(pcd_3d.points)
         pcd_3d, _ = pcd_3d.remove_statistical_outlier(nb_neighbors=50, std_ratio=1.0)
+        filtered_points = len(pcd_3d.points)
 
         if pcd_3d.is_empty():
+            logger.debug(
+                "Detection rejected frame={} idx={} label={!r} reason=empty_after_statistical_outlier "
+                "score={} bbox={} mask_area={} valid_depth_points={} projected_points={} "
+                "downsampled_points={} filtered_points={}",
+                frame_idx,
+                idx,
+                label,
+                score_text,
+                bbox_text,
+                mask_area,
+                valid_depth_count,
+                projected_points,
+                downsampled_points,
+                filtered_points,
+            )
             return None
+
+        logger.debug(
+            "Detection accepted frame={} idx={} label={!r} score={} bbox={} mask_area={} "
+            "valid_depth_points={} projected_points={} downsampled_points={} filtered_points={}",
+            frame_idx,
+            idx,
+            label,
+            score_text,
+            bbox_text,
+            mask_area,
+            valid_depth_count,
+            projected_points,
+            downsampled_points,
+            filtered_points,
+        )
 
         return ObjNode(
             id=f"obj_{idx}_{uuid.uuid4().hex[:3]}",
