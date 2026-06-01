@@ -2,7 +2,7 @@ import sys
 import os
 import json
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import cv2
@@ -173,8 +173,15 @@ class ReplicaDataset:
             self.depth_scale,
             self._calib_w,
             self._calib_h,
-        ) = self._load_depth_intrinsics(cam_params_path, self.root_dir)
-        logger.info(f"depth_intrinsics=\n{self.depth_intrinsics}")
+            self._cameras_by_key,
+            self._default_camera_key,
+        ) = self._load_cam_params(cam_params_path, self.root_dir)
+        logger.info(f"depth_intrinsics (default)=\n{self.depth_intrinsics}")
+        if len(self._cameras_by_key) > 1:
+            logger.info(
+                f"多相机内参: {sorted(self._cameras_by_key.keys())} "
+                f"(default={self._default_camera_key!r})"
+            )
         logger.info(f"depth_scale={self.depth_scale}")
 
         self.data_list = self._get_data_list()
@@ -190,21 +197,54 @@ class ReplicaDataset:
         self.name = "Replica"
         self.scene_name = self.root_dir.split("/")[-1]
 
-    def _camera_matrix_for_rgb_shape(self, W: int, H: int) -> np.ndarray:
+    def _camera_matrix_for_rgb_shape(
+        self, W: int, H: int, camera_key: Optional[str] = None
+    ) -> np.ndarray:
         """若 cam_params 含 w,h 且与 RGB 尺寸不同，则返回缩放后的 K。"""
-        K0 = self.depth_intrinsics.astype(np.float64)
-        if self._calib_w is None or self._calib_h is None:
+        K0, w0, h0, _scale = self._intrinsics_record_for_key(camera_key)
+        if w0 is None or h0 is None:
             return K0.copy()
         return _intrinsics_for_image_size(
             float(K0[0, 0]),
             float(K0[1, 1]),
             float(K0[0, 2]),
             float(K0[1, 2]),
-            int(self._calib_w),
-            int(self._calib_h),
+            int(w0),
+            int(h0),
             W,
             H,
         )
+
+    def infer_camera_key(self, rgb_path: str) -> Optional[str]:
+        """从 merge 输出 rgb 路径推断相机前缀，如 rgb_cam0_00035300.png → cam0。"""
+        stem = Path(rgb_path).stem
+        rgb_pfx = (self._rgb_prefix_cfg or "rgb").rstrip("_")
+        stem = _stem_normalize_for_merge_tag(stem, rgb_pfx)
+        if ms is not None:
+            try:
+                return ms._stem_camera_id(stem)
+            except ValueError:
+                return None
+        if "_" not in stem:
+            return None
+        head, tail = stem.rsplit("_", 1)
+        if head and tail.isdigit():
+            return head
+        return None
+
+    def _intrinsics_record_for_key(
+        self, camera_key: Optional[str]
+    ) -> Tuple[np.ndarray, Optional[int], Optional[int], float]:
+        key = (
+            camera_key
+            if camera_key and camera_key in self._cameras_by_key
+            else self._default_camera_key
+        )
+        rec = self._cameras_by_key.get(
+            key, self._cameras_by_key[self._default_camera_key]
+        )
+        K, scale, w0, h0 = rec
+        return K, w0, h0, scale
 
     def __getitem__(self, idx):
         """
@@ -452,42 +492,76 @@ class ReplicaDataset:
                 return transformation_matrix
         raise IndexError(f"pose 索引越界: idx={idx}, lines={len(lines)}")
 
-    def _load_depth_intrinsics(self, path, root_dir: str):
+    def _load_cam_params(self, path, root_dir: str):
         """
-        Load the depth camera intrinsics from the given path.
-
-        Args:
-            path: Path to the depth camera intrinsics file.
-            root_dir: 数据集根目录，用于在缺少 camera.scale 时读取 depth_uint16_write_scale.txt
-
-        Returns:
-            (K 3x3, scale, 标定宽, 标定高)；宽/高可能为 None。
+        读取 cam_params.json。支持单相机 ``{"camera": {...}}`` 与多相机
+        ``{"camera": {...}, "cameras": {"cam0": {...}, ...}}``。
         """
         with open(path, "r", encoding="utf-8") as file:
             data = json.load(file)
-            camera_params = data.get("camera")
-            if camera_params:
-                fx = camera_params.get("fx")
-                fy = camera_params.get("fy")
-                cx = camera_params.get("cx")
-                cy = camera_params.get("cy")
-                scale = camera_params.get("scale")
-                if scale is None:
-                    scale = _read_depth_uint16_write_scale(root_dir)
-                    logger.info(
-                        f"camera.scale 缺失，已用 depth_uint16_write_scale.txt -> {scale}"
-                    )
-                else:
-                    scale = float(scale)
-                w0 = camera_params.get("w")
-                h0 = camera_params.get("h")
-                w0_i = int(w0) if w0 is not None else None
-                h0_i = int(h0) if h0 is not None else None
-                K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float64)
-                return K, float(scale), w0_i, h0_i
-        raise ValueError("Camera parameters not found in cam_params.json")
 
-    def create_pcd(self, rgb, depth, camera_pose=None):
+        def _one(cp: dict) -> Tuple[np.ndarray, float, Optional[int], Optional[int]]:
+            fx = cp.get("fx")
+            fy = cp.get("fy")
+            cx = cp.get("cx")
+            cy = cp.get("cy")
+            scale = cp.get("scale")
+            if scale is None:
+                scale = _read_depth_uint16_write_scale(root_dir)
+            else:
+                scale = float(scale)
+            w0 = cp.get("w")
+            h0 = cp.get("h")
+            w0_i = int(w0) if w0 is not None else None
+            h0_i = int(h0) if h0 is not None else None
+            K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=np.float64)
+            return K, float(scale), w0_i, h0_i
+
+        cameras_by_key: Dict[
+            str, Tuple[np.ndarray, float, Optional[int], Optional[int]]
+        ] = {}
+        if isinstance(data.get("cameras"), dict) and data["cameras"]:
+            for key, cp in data["cameras"].items():
+                if isinstance(cp, dict):
+                    cameras_by_key[str(key)] = _one(cp)
+
+        default_cp = data.get("camera")
+        if not isinstance(default_cp, dict):
+            if cameras_by_key:
+                default_key = next(iter(cameras_by_key))
+                K, scale, w0, h0 = cameras_by_key[default_key]
+                return K, scale, w0, h0, cameras_by_key, default_key
+            raise ValueError("cam_params.json 缺少 camera / cameras 字段")
+
+        K, scale, w0, h0 = _one(default_cp)
+        if not cameras_by_key:
+            default_key = "camera"
+            cameras_by_key[default_key] = (K, scale, w0, h0)
+        else:
+            default_key = next(iter(cameras_by_key))
+            for k, rec in cameras_by_key.items():
+                if (
+                    abs(rec[0][0, 0] - K[0, 0]) < 1e-3
+                    and abs(rec[0][1, 1] - K[1, 1]) < 1e-3
+                ):
+                    default_key = k
+                    break
+        return K, scale, w0, h0, cameras_by_key, default_key
+
+    def _load_depth_intrinsics(self, path, root_dir: str):
+        """兼容旧调用：仅返回默认相机内参。"""
+        K, scale, w0, h0, _cams, _dk = self._load_cam_params(path, root_dir)
+        return K, scale, w0, h0
+
+    def create_pcd(
+        self,
+        rgb,
+        depth,
+        camera_pose=None,
+        *,
+        rgb_path: Optional[str] = None,
+        camera_key: Optional[str] = None,
+    ):
         """
         Create a point cloud from RGB-D images.
 
@@ -495,10 +569,11 @@ class ReplicaDataset:
             rgb: RGB image as a numpy array.
             depth: Depth image as a numpy array.
             camera_pose: Camera pose as a numpy array (4x4 matrix).
-
-        Returns:
-            Point cloud as an Open3D object.
+            rgb_path: merge 输出的 rgb 路径，用于推断多相机内参（cam0/cam2/...）。
+            camera_key: 显式指定相机前缀；省略时从 rgb_path 推断。
         """
+        if camera_key is None and rgb_path:
+            camera_key = self.infer_camera_key(rgb_path)
         rgb = np.array(rgb)
         depth = np.array(depth)
         if depth.ndim == 3:
@@ -508,9 +583,10 @@ class ReplicaDataset:
             raise ValueError(
                 f"RGB 与深度尺寸不一致: rgb {H}x{W}, depth {depth.shape[0]}x{depth.shape[1]}"
             )
-        camera_matrix = self._camera_matrix_for_rgb_shape(W, H)
+        camera_matrix = self._camera_matrix_for_rgb_shape(W, H, camera_key=camera_key)
+        _, _, _, depth_scale = self._intrinsics_record_for_key(camera_key)
         x, y = np.meshgrid(np.arange(W), np.arange(H))
-        depth = depth.astype(np.float32) / float(self.depth_scale)
+        depth = depth.astype(np.float32) / float(depth_scale)
         mask = np.logical_and(depth > self.depth_min, depth < self.depth_max)
         x = x[mask]
         y = y[mask]
@@ -539,6 +615,8 @@ class ReplicaDataset:
         depth_image: np.ndarray,
         rgb_image: np.ndarray,
         camera_pose: np.ndarray,
+        *,
+        camera_key: Optional[str] = None,
     ) -> o3d.geometry.PointCloud:
         """
         Project 2D mask to 3D point cloud using dataset's camera parameters with RGB colors.
@@ -564,7 +642,9 @@ class ReplicaDataset:
         depth_u = np.asarray(depth_image)
         if depth_u.ndim == 3:
             depth_u = depth_u[:, :, 0]
-        depth = depth_u.astype(np.float32) / float(self.depth_scale)
+        depth = depth_u.astype(np.float32) / float(
+            self._intrinsics_record_for_key(camera_key)[3]
+        )
         depth_masked = depth[mask_indices]
 
         # Get RGB values for masked pixels
@@ -584,7 +664,7 @@ class ReplicaDataset:
             return o3d.geometry.PointCloud()
 
         iw, ih = rgb_image.shape[1], rgb_image.shape[0]
-        camera_matrix = self._camera_matrix_for_rgb_shape(iw, ih)
+        camera_matrix = self._camera_matrix_for_rgb_shape(iw, ih, camera_key=camera_key)
 
         # Convert to 3D coordinates using dataset's intrinsics
         pixels = np.stack([x_valid, y_valid, np.ones_like(x_valid)], axis=0)
@@ -615,10 +695,10 @@ class ReplicaDataset:
 # Example usage:
 if __name__ == "__main__":
     cfg = {
-        "root_dir": "/home/ubt/workspace/vggt_ws/datasets/merged_from_gs_mesh",
+        "root_dir": "/home/ubt/workspace/vggt_ws/test/merged_from_gs_mesh",
         "depth_scale": 1000.0,
         "depth_min": 0.05,
-        "depth_max": 80.0,
+        "depth_max": 4.0,
     }
     dataset = ReplicaDataset(cfg)
     print(f"Number of samples: {len(dataset)}")
@@ -626,6 +706,7 @@ if __name__ == "__main__":
     scene_pcd = o3d.geometry.PointCloud()
     for i in range(0, len(dataset), 5):
         rgb, depth, pose = dataset[i]
-        pcd = dataset.create_pcd(rgb, depth, pose)
+        rgb_path = dataset.data_list[i][0]
+        pcd = dataset.create_pcd(rgb, depth, pose, rgb_path=rgb_path)
         scene_pcd += pcd
     o3d.visualization.draw_geometries([scene_pcd], window_name="Replica Scene")

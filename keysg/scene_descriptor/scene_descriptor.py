@@ -27,6 +27,7 @@ from .utils import (
     parse_json_best_effort,
     sanitize_for_json,
 )
+from ..utils.dataset_utils import get_frame_camera_context, get_frame_rgb_path
 
 
 class SceneDescriptor:
@@ -326,7 +327,16 @@ class SceneDescriptor:
 
         for idx in room.sparse_indices:
             rgb, depth, pose = self.dataset[idx]
-            rgb_path = self.dataset.data_list[idx][0]
+            camera_ctx = get_frame_camera_context(self.dataset, idx, rgb)
+            rgb_path = camera_ctx.get("rgb_path") or get_frame_rgb_path(self.dataset, idx) or ""
+            intrinsics = camera_ctx.get("intrinsics")
+            if intrinsics is None:
+                logger.warning(
+                    "Room {} frame {} has no camera intrinsics; skipping visibility check.",
+                    room.id,
+                    idx,
+                )
+                continue
 
             # Find visible nodes
             nodes_in_frame = {}
@@ -335,8 +345,8 @@ class SceneDescriptor:
                     node.pcd,
                     depth,
                     pose,
-                    self.dataset.depth_intrinsics,
-                    self.dataset.depth_scale,
+                    intrinsics,
+                    camera_ctx["depth_scale"],
                 ):
                     nodes_in_frame[node.id] = node.label
 

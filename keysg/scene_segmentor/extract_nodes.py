@@ -20,6 +20,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from keysg.scene_segmentor.obj_node import ObjNode
 from keysg.utils.clip_utils import CLIPFeatureExtractor
+from keysg.utils.dataset_utils import (
+    get_frame_camera_context,
+    project_2d_mask_to_3d_for_frame,
+)
 from keysg.utils.img_utils import crop_image, get_mask_score
 from keysg.utils.pcd_utils import (
     compute_3d_bbox_iou,
@@ -277,7 +281,8 @@ class NodesRepo:
                     interpolation=cv2.INTER_NEAREST,
                 )
 
-            depth_scale = float(getattr(self.dataset, "depth_scale", 1000.0))
+            camera_ctx = get_frame_camera_context(self.dataset, frame_idx, rgb_image)
+            depth_scale = float(camera_ctx.get("depth_scale", 1000.0))
             depth_min = float(getattr(self.dataset, "depth_min", 0.0))
             depth_max = float(getattr(self.dataset, "depth_max", np.inf))
             depth = depth_arr.astype(np.float32) / depth_scale
@@ -338,8 +343,8 @@ class NodesRepo:
             )
             return None
 
-        pcd_3d = self.dataset.project_2d_mask_to_3d(
-            mask_2d, depth_image, rgb_image, camera_pose
+        pcd_3d = project_2d_mask_to_3d_for_frame(
+            self.dataset, frame_idx, mask_2d, depth_image, rgb_image, camera_pose
         )
         if pcd_3d is None or pcd_3d.is_empty():
             logger.debug(
@@ -687,8 +692,13 @@ class NodesRepo:
                 )
 
                 _, depth_image, camera_pose = self.dataset[best_frame_idx]
-                fun_pcd = self.dataset.project_2d_mask_to_3d(
-                    fun_mask, depth_image, best_rgb_frame, camera_pose
+                fun_pcd = project_2d_mask_to_3d_for_frame(
+                    self.dataset,
+                    best_frame_idx,
+                    fun_mask,
+                    depth_image,
+                    best_rgb_frame,
+                    camera_pose,
                 )
 
                 if not fun_pcd or len(fun_pcd.points) == 0:

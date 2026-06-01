@@ -25,6 +25,7 @@ from keysg.graph import KeySGGraph
 from keysg.scene_descriptor.scene_descriptor import SceneDescriptor
 from keysg.scene_segmentor.extract_nodes import NodesRepo
 from keysg.scene_segmentor.scene_segmentor import SceneSegmentor
+from keysg.utils.dataset_utils import get_frame_camera_context
 from keysg.utils.logging_setup import setup_logging
 from keysg.utils.vis_utils import (
     project_objects_to_masks,
@@ -512,18 +513,6 @@ class KeySGPipeline:
 
     def _label_keyframes(self) -> None:
         """Label keyframes by matching GSAM2 detections to projected 3D objects."""
-        intrinsics = getattr(self.dataset, "rgb_intrinsics", None)
-        if intrinsics is None:
-            intrinsics = self.dataset.depth_intrinsics.copy()
-            depth_h, depth_w = self.dataset.depth_H, self.dataset.depth_W
-            rgb_h, rgb_w = self.dataset.rgb_H, self.dataset.rgb_W
-            if depth_h != rgb_h or depth_w != rgb_w:
-                sx, sy = rgb_w / depth_w, rgb_h / depth_h
-                intrinsics[0, 0] *= sx
-                intrinsics[0, 2] *= sx
-                intrinsics[1, 1] *= sy
-                intrinsics[1, 2] *= sy
-
         # Build a segmentor, reusing the shared instance if available
         if (
             self._shared_nodes_repo is not None
@@ -577,6 +566,11 @@ class KeySGPipeline:
                 for idx in room.sparse_indices:
                     rgb, _, pose = self.dataset[idx]
                     h, w = rgb.shape[:2]
+                    camera_ctx = get_frame_camera_context(self.dataset, idx, rgb)
+                    intrinsics = camera_ctx["intrinsics"]
+                    if intrinsics is None:
+                        logger.warning("No intrinsics for keyframe {}; skipping", idx)
+                        continue
 
                     # 1) Project 3D object PCDs → 2D masks for visible objects
                     obj_masks = project_objects_to_masks(

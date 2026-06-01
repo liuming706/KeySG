@@ -7,7 +7,7 @@ dataset:
   root_dir: /mnt/ssd2/datasets/SIR/Demo/kitchen_1fps_da3 # Example ScanNet scene path
   depth_scale: 1000.0 # Depth image scaling factor (mm to meters)
   depth_min: 0.3 # Minimum valid depth value (meters)
-  depth_max: 4.0 # Maximum valid depth value (meters)
+  depth_max: 8.0 # Maximum valid depth value (meters)
 
 # Output directory for all pipeline results
 output_dir: output/keysg_rag1

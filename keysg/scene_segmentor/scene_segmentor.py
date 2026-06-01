@@ -24,6 +24,7 @@ from .floor import Floor
 from .floor_segmentation import FloorSegmentation
 from .room import Room
 from .room_segmentation import RoomSegmentation
+from ..utils.dataset_utils import create_pcd_for_frame
 from ..utils.frame_sampler import HDBSCANKeyframeSampler
 
 
@@ -197,7 +198,7 @@ class SceneSegmentor:
 
         for i in tqdm(range(0, len(self.dataset), self.fuse_every_k), desc="Fusing"):
             rgb, depth, pose = self.dataset[i]
-            frame_pcd = self.dataset.create_pcd(rgb, depth, pose)
+            frame_pcd = create_pcd_for_frame(self.dataset, i, rgb, depth, pose)
             pcd += frame_pcd
 
         if self.voxel_size > 0:
@@ -350,7 +351,9 @@ class SceneSegmentor:
 
         try:
             rgb, depth, pose = self.dataset[idx]
-            frame_pcd = self.dataset.create_pcd(rgb, depth, pose).voxel_down_sample(0.1)
+            frame_pcd = create_pcd_for_frame(
+                self.dataset, idx, rgb, depth, pose
+            ).voxel_down_sample(0.1)
         except Exception:
             return False
 
