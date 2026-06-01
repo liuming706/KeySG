@@ -777,6 +777,7 @@ class KeySGVisualizer:
             {}
         )  # red-highlighted frustum handles
         self._bbox_handle: Optional[Any] = None
+        self._connected_clients: Dict[int, Any] = {}
 
         # State
         self._color_mode: str = "instance"  # "instance" | "rgb"
@@ -787,6 +788,8 @@ class KeySGVisualizer:
         self._show_objects: bool = True
         self._show_keyframes: bool = True
         self._grounding_retriever = None  # cached after first query
+        self._scene_center: Optional[np.ndarray] = None
+        self._scene_radius: float = 5.0
 
     # ------------------------------------------------------------------
     # Scene loading
@@ -877,6 +880,7 @@ class KeySGVisualizer:
         self._add_rooms()
         self._add_objects()
         self._add_keyframes()
+        self._compute_scene_bounds()
 
     # ------------------------------------------------------------------
     # Add layers
@@ -1116,6 +1120,101 @@ class KeySGVisualizer:
                 pass
             self._bbox_handle = None
 
+    # ------------------------------------------------------------------
+    # Camera navigation helpers
+    # ------------------------------------------------------------------
+
+    def _compute_scene_bounds(self) -> None:
+        """Estimate scene center/radius from loaded point-cloud layers.
+
+        Viser's default orbit pivot is often the world origin.  For large scenes or
+        scenes whose useful content is offset from the origin, explicitly moving
+        each client's camera ``look_at`` point makes mouse drag/orbit operate
+        around a meaningful focus point instead of around ``/world``.
+        """
+        chunks = []
+        for pts in self._obj_pts.values():
+            if pts is not None and len(pts) > 0:
+                chunks.append(pts)
+
+        # If objects are hidden/filtered out, fall back to floor and room clouds.
+        if not chunks:
+            for collection in (self.floors.values(), self.rooms.values()):
+                for node in collection:
+                    pts, _ = self._pcd_to_arrays(getattr(node, "pcd", None))
+                    if pts is not None and len(pts) > 0:
+                        chunks.append(self._transform_pts(pts))
+
+        if not chunks:
+            self._scene_center = np.zeros(3, dtype=np.float32)
+            self._scene_radius = 5.0
+            return
+
+        pts_all = np.concatenate(chunks, axis=0)
+        mn = pts_all.min(axis=0)
+        mx = pts_all.max(axis=0)
+        self._scene_center = ((mn + mx) / 2.0).astype(np.float32)
+        self._scene_radius = max(float(np.linalg.norm(mx - mn)) * 0.6, 1.0)
+
+    def _iter_clients(self):
+        """Yield currently connected Viser clients across common API versions."""
+        if self.server is None:
+            return []
+        try:
+            clients = self.server.get_clients()
+            if isinstance(clients, dict):
+                return list(clients.values())
+            return list(clients)
+        except Exception:
+            return list(self._connected_clients.values())
+
+    def _focus_camera(
+        self,
+        center: np.ndarray,
+        direction: np.ndarray = np.array([1.0, 1.0, 1.0], dtype=np.float32),
+        distance: Optional[float] = None,
+    ) -> None:
+        """Move all connected clients to look at ``center`` from ``direction``.
+
+        This changes the orbit/drag pivot because Viser clients orbit around their
+        camera ``look_at`` point.  The implementation is intentionally defensive so
+        it works across Viser versions where camera handles expose slightly
+        different writable attributes.
+        """
+        center = np.asarray(center, dtype=np.float32)
+        direction = np.asarray(direction, dtype=np.float32)
+        norm = float(np.linalg.norm(direction))
+        if norm < 1e-6:
+            direction = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+            norm = float(np.linalg.norm(direction))
+        direction = direction / norm
+        distance = float(distance if distance is not None else self._scene_radius)
+        position = center + direction * distance
+
+        clients = self._iter_clients()
+        if not clients:
+            logger.info("No connected clients yet; saved focus point {}", center)
+            return
+
+        for client in clients:
+            cam = getattr(client, "camera", None)
+            if cam is None:
+                continue
+            for attr, value in (
+                ("look_at", center),
+                ("position", position),
+                ("up_direction", np.array([0.0, 1.0, 0.0], dtype=np.float32)),
+            ):
+                try:
+                    setattr(cam, attr, value)
+                except Exception:
+                    pass
+
+    def _focus_scene_center(self) -> None:
+        if self._scene_center is None:
+            self._compute_scene_bounds()
+        self._focus_camera(self._scene_center, direction=np.array([1.0, 1.0, 1.0]))
+
     def _highlight_keyframes(self, keyframe_infos: List[Dict[str, Any]]) -> None:
         """Re-color matched keyframe frustums to red so they stand out.
 
@@ -1323,6 +1422,27 @@ class KeySGVisualizer:
             def _(_):
                 self._color_mode = "rgb" if color_mode_dd.value == "RGB" else "instance"
                 self._rebuild_scene()
+
+        # -- Camera navigation / orbit pivot --
+        with self.server.gui.add_folder("Navigation / Pivot"):
+            self.server.gui.add_markdown(
+                "Move the camera `look_at` point to the scene center. "
+                "After focusing, mouse drag/orbit will rotate around the scene center "
+                "instead of only around the map/world origin."
+            )
+            focus_scene_btn = self.server.gui.add_button("Focus Scene Center")
+            nav_status = self.server.gui.add_markdown(
+                "_Click Focus Scene Center to update the orbit pivot._"
+            )
+
+            @focus_scene_btn.on_click
+            def _(_):
+                self._focus_scene_center()
+                c = self._scene_center if self._scene_center is not None else np.zeros(3)
+                nav_status.content = (
+                    f"**Pivot:** scene center "
+                    f"x={c[0]:.3f}, y={c[1]:.3f}, z={c[2]:.3f}"
+                )
 
         # -- Manual bbox by object ID --
         with self.server.gui.add_folder("Draw BBox by ID"):
