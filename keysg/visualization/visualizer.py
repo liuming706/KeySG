@@ -9,7 +9,7 @@ Shows the full KeySG scene graph in 3D:
 
 Usage:
     keysg-vis --scene_dir output/pipeline/ScanNet/scene0011_00
-    python -m KeySG.visualization.visualizer --scene_dir <path> [--port 8080]
+    python -m KeySG.visualization.visualizer --scene_dir <path> [--port 8080] [--hide-roofs]
 """
 
 from __future__ import annotations
@@ -27,7 +27,6 @@ from scipy.spatial.transform import Rotation
 import viser
 
 from keysg.utils.load_utils import get_floors, get_objects, get_rooms, load_scene_nodes
-
 
 # ---------------------------------------------------------------------------
 # Color palette
@@ -747,10 +746,18 @@ def _run_open_qa(
 class KeySGVisualizer:
     """Interactive Viser visualizer for KeySG scene graphs."""
 
-    def __init__(self, scene_dir: str, port: int = 8080, model: str = "gpt-5.4"):
+    def __init__(
+        self,
+        scene_dir: str,
+        port: int = 8080,
+        model: str = "gpt-5.4",
+        show_roofs: bool = True,
+        roof_margin: float = 0.12,
+    ):
         self.scene_dir = scene_dir
         self.port = port
         self.model = model
+        self.roof_margin = roof_margin
         self.server: Optional[viser.ViserServer] = None
 
         # Scene data
@@ -763,6 +770,7 @@ class KeySGVisualizer:
         self._obj_colors: Dict[str, np.ndarray] = {}  # per-instance palette color
         self._obj_pts: Dict[str, np.ndarray] = {}  # point positions for bbox
         self._floor_handles: Dict[str, Any] = {}
+        self._floor_label_handles: Dict[str, Any] = {}
         self._room_handles: Dict[str, Any] = {}
         self._frustum_handles: Dict[str, Any] = {}
         self._highlighted_frustums: Dict[str, Any] = (
@@ -775,6 +783,7 @@ class KeySGVisualizer:
         self._flip_z: bool = False
         self._show_floors: bool = False
         self._show_rooms: bool = False
+        self._show_roofs: bool = show_roofs
         self._show_objects: bool = True
         self._show_keyframes: bool = True
         self._grounding_retriever = None  # cached after first query
@@ -820,9 +829,38 @@ class KeySGVisualizer:
             pts[:, 2] *= -1
         return pts
 
+    def _filter_roof_points(
+        self,
+        pts: np.ndarray,
+        colors: Optional[np.ndarray],
+        zero_level: Optional[float],
+        height: Optional[float],
+    ):
+        """Optionally remove ceiling/roof points from a room or floor point cloud.
+
+        Room/floor point clouds contain floor, walls and ceiling in one cloud.  For
+        top-down inspection it is useful to keep the lower structure but hide the
+        top cap.  When ``_show_roofs`` is disabled and height metadata is present,
+        points near ``zero_level + height`` are filtered out.
+        """
+        if self._show_roofs or pts is None or len(pts) == 0:
+            return pts, colors
+        if zero_level is None or height is None:
+            return pts, colors
+
+        ceiling_y = float(zero_level) + float(height)
+        keep = pts[:, 1] < (ceiling_y - self.roof_margin)
+        if not np.any(keep):
+            logger.debug(
+                "Roof filtering would remove all points; keeping original point cloud."
+            )
+            return pts, colors
+        return pts[keep], colors[keep] if colors is not None else None
+
     def _rebuild_scene(self) -> None:
         """Remove and re-add all scene layers (called on flip / color-mode change)."""
         for handles in (
+            self._floor_label_handles,
             self._floor_handles,
             self._room_handles,
             self._obj_handles,
@@ -853,6 +891,12 @@ class KeySGVisualizer:
             pts, rgb_colors = self._pcd_to_arrays(pcd)
             if pts is None:
                 continue
+            pts, rgb_colors = self._filter_roof_points(
+                pts,
+                rgb_colors,
+                getattr(floor, "floor_zero_level", None),
+                getattr(floor, "floor_height", None),
+            )
             pts = self._transform_pts(pts)
             if self._color_mode == "rgb" and rgb_colors is not None:
                 color = rgb_colors
@@ -867,11 +911,13 @@ class KeySGVisualizer:
             handle.visible = self._show_floors
             self._floor_handles[fid] = handle
             centroid = pts.mean(axis=0)
-            self.server.scene.add_label(
+            label_handle = self.server.scene.add_label(
                 f"/floors/{fid}/label",
                 text=f"Floor {fid}",
                 position=centroid + np.array([0, 0, 0.5], dtype=np.float32),
             )
+            label_handle.visible = self._show_floors
+            self._floor_label_handles[fid] = label_handle
 
     def _add_rooms(self) -> None:
         palette = _palette(max(len(self.rooms), 1))
@@ -882,6 +928,12 @@ class KeySGVisualizer:
             pts, rgb_colors = self._pcd_to_arrays(pcd)
             if pts is None:
                 continue
+            pts, rgb_colors = self._filter_roof_points(
+                pts,
+                rgb_colors,
+                getattr(room, "zero_level", None),
+                getattr(room, "height", None),
+            )
             pts = self._transform_pts(pts)
             if self._color_mode == "rgb" and rgb_colors is not None:
                 color = rgb_colors
@@ -1203,6 +1255,16 @@ class KeySGVisualizer:
         with self.server.gui.add_folder("Layers"):
             chk_floors = self.server.gui.add_checkbox("Floors", initial_value=False)
             chk_rooms = self.server.gui.add_checkbox("Rooms", initial_value=False)
+            chk_roofs = self.server.gui.add_checkbox(
+                "Roofs / Ceilings", initial_value=self._show_roofs
+            )
+            roof_margin_slider = self.server.gui.add_slider(
+                "Roof Margin (m)",
+                min=0.0,
+                max=5.0,
+                step=0.01,
+                initial_value=self.roof_margin,
+            )
             chk_objects = self.server.gui.add_checkbox("Objects", initial_value=True)
             chk_kf = self.server.gui.add_checkbox("Keyframes", initial_value=True)
             chk_flip_z = self.server.gui.add_checkbox("Flip Z", initial_value=False)
@@ -1212,12 +1274,25 @@ class KeySGVisualizer:
                 self._show_floors = chk_floors.value
                 for h in self._floor_handles.values():
                     h.visible = chk_floors.value
+                for h in self._floor_label_handles.values():
+                    h.visible = chk_floors.value
 
             @chk_rooms.on_update
             def _(_):
                 self._show_rooms = chk_rooms.value
                 for h in self._room_handles.values():
                     h.visible = chk_rooms.value
+
+            @chk_roofs.on_update
+            def _(_):
+                self._show_roofs = chk_roofs.value
+                self._rebuild_scene()
+
+            @roof_margin_slider.on_update
+            def _(_):
+                self.roof_margin = float(roof_margin_slider.value)
+                if not self._show_roofs:
+                    self._rebuild_scene()
 
             @chk_objects.on_update
             def _(_):
@@ -1269,8 +1344,11 @@ class KeySGVisualizer:
             bbox_id_dd = self.server.gui.add_dropdown(
                 "Object ID",
                 options=[f"{oid} ({label})" for oid, label in _available_ids],
-                initial_value=[f"{oid} ({label})" for oid, label in _available_ids][0]
-                if _available_ids else "--- no objects ---",
+                initial_value=(
+                    [f"{oid} ({label})" for oid, label in _available_ids][0]
+                    if _available_ids
+                    else "--- no objects ---"
+                ),
             )
             bbox_id_btn = self.server.gui.add_button("Draw BBox")
             bbox_id_result = self.server.gui.add_markdown(
@@ -1514,11 +1592,31 @@ def main() -> None:
         "--port", "-p", type=int, default=8080, help="Viser server port (default: 8080)"
     )
     parser.add_argument(
-        "--model", "-m", type=str, default="gpt-5.4",
-        help="OpenAI model name for all LLM calls (default: gpt-5.4)"
+        "--model",
+        "-m",
+        type=str,
+        default="gpt-5.4",
+        help="OpenAI model name for all LLM calls (default: gpt-5.4)",
+    )
+    parser.add_argument(
+        "--hide-roofs",
+        action="store_true",
+        help="Start with room/floor roofs (ceilings) hidden for top-down inspection",
+    )
+    parser.add_argument(
+        "--roof-margin",
+        type=float,
+        default=0.12,
+        help="Vertical margin below ceiling used when hiding roofs, in meters (default: 0.12)",
     )
     args = parser.parse_args()
-    KeySGVisualizer(args.scene_dir, port=args.port, model=args.model).run()
+    KeySGVisualizer(
+        args.scene_dir,
+        port=args.port,
+        model=args.model,
+        show_roofs=not args.hide_roofs,
+        roof_margin=args.roof_margin,
+    ).run()
 
 
 if __name__ == "__main__":
