@@ -59,7 +59,7 @@ nodes:
   save_visualizations: true # Save visualization files (.ply format)
   # GroundingSAM2 configuration passed to NodesRepo
   gsam2:
-    device: cpu # Device for GroundingSAM2/CLIP: null = auto, cuda, cpu, cuda:0, etc.
+    device: cuda # Device for GroundingSAM2/CLIP: null = auto, cuda, cpu, cuda:0, etc.
     detection_mode: llmdet # llmdet | grounding_dino | owlv2
     sam2_checkpoint: ./checkpoints/sam2.1_hiera_large.pt
     sam2_model_config: sam2_configs/sam2.1/sam2.1_hiera_l.yaml

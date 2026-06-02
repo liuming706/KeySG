@@ -11,6 +11,13 @@ import re
 import shutil
 from typing import Any, Dict, List, Optional
 
+# KeySG is primarily a batch/CLI pipeline.  Force Matplotlib to use a
+# non-interactive backend before any module imports ``matplotlib.pyplot``.
+# Otherwise Matplotlib may select TkAgg on desktop Linux, creating Tkinter
+# objects that can later be garbage-collected from asyncio worker threads and
+# crash with: ``Tcl_AsyncDelete: async handler deleted by the wrong thread``.
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 import cv2
 import numpy as np
 

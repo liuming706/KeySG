@@ -16,7 +16,7 @@ DEFAULT_CLIP_CONFIG = {
     # "model_name": "ViT-H-14",
     "model_name": "hf-hub:timm/ViT-gopt-16-SigLIP2-384",
     "pretrained": "laion2b_s32b_b79k",
-    "device": "cpu",
+    "device": "cuda",
     "force_cpu": False,
 }
 

@@ -86,6 +86,7 @@ keysg-build dataset.kind=scannet dataset.root_dir=/data/ScanNet/scans/scene0011_
 # 需要代理调用模型
 export https_proxy=http://127.0.0.1:10808
 export http_proxy=http://127.0.0.1:10808
+export PIP_INDEX_URL=https://pypi.org/simple
 
 keysg-build dataset.kind=replica dataset.root_dir=/data/Replica/room0
 keysg-build dataset.kind=replica dataset.root_dir=data/Replica_RGBD/Replica/room0
