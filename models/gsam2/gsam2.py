@@ -108,9 +108,7 @@ def _resolve_label_to_prompt_tag(
         return label, prompt_tag_to_id[label], "exact", 1.0
 
     label_variants = _label_variants_for_matching(label)
-    tag_variants_by_idx = [
-        _label_variants_for_matching(tag) for tag in prompt_tags
-    ]
+    tag_variants_by_idx = [_label_variants_for_matching(tag) for tag in prompt_tags]
 
     # Normalized exact / alternative exact match.
     for tag_idx, tag_variants in enumerate(tag_variants_by_idx):
@@ -134,7 +132,9 @@ def _resolve_label_to_prompt_tag(
                     reason = "substring"
                 else:
                     token_score = _token_overlap_score(label_variant, tag_variant)
-                    edit_score = SequenceMatcher(None, label_variant, tag_variant).ratio()
+                    edit_score = SequenceMatcher(
+                        None, label_variant, tag_variant
+                    ).ratio()
                     score = max(token_score, edit_score)
                     reason = "token_overlap" if token_score >= edit_score else "fuzzy"
 
@@ -271,7 +271,9 @@ class GroundingSAM2:
                 abnormal_tags,
             )
         if not tags:
-            logger.warning("LLMDet prompt produced no valid tags: raw_prompt={!r}", text_prompt)
+            logger.warning(
+                "LLMDet prompt produced no valid tags: raw_prompt={!r}", text_prompt
+            )
 
         if len(tags) <= self.llmdet_max_tags_per_batch:
             return self._predict_llmdet_batch(
@@ -363,54 +365,8 @@ class GroundingSAM2:
 
         class_names = []
         class_ids = []
-
-        if raw_text_labels is not None:
-            # Transformers >= 4.51 recommends text_labels for string object names.
-            label_names = [str(label) for label in raw_text_labels]
-            logger.debug("Using LLMDet text_labels for class names: {}", label_names)
-            for det_idx, class_name in enumerate(label_names):
-                stripped_name = class_name.strip()
-                if not stripped_name:
-                    logger.warning(
-                        "LLMDet returned an empty text label: det_idx={}, raw_text_labels={}, prompt_tags={}",
-                        det_idx,
-                        raw_text_labels,
-                        texts[0],
-                    )
-                    class_names.append("")
-                    class_ids.append(len(texts[0]) + det_idx)
-                    continue
-
-                matched_tag, matched_id, match_reason, match_score = _resolve_label_to_prompt_tag(
-                    stripped_name,
-                    texts[0],
-                )
-                if matched_id is None:
-                    logger.warning(
-                        "LLMDet text label could not be matched to any prompt tag: det_idx={}, text_label={!r}, best_reason={}, best_score={:.3f}, prompt_tags={}",
-                        det_idx,
-                        stripped_name,
-                        match_reason,
-                        match_score,
-                        texts[0],
-                    )
-                    class_names.append(stripped_name)
-                    class_ids.append(len(texts[0]) + det_idx)
-                else:
-                    if match_reason != "exact":
-                        logger.debug(
-                            "Matched LLMDet text label to prompt tag: det_idx={}, text_label={!r}, prompt_tag={!r}, match_reason={}, match_score={:.3f}",
-                            det_idx,
-                            stripped_name,
-                            matched_tag,
-                            match_reason,
-                            match_score,
-                        )
-                    class_names.append(stripped_name)
-                    class_ids.append(matched_id)
-
-            class_ids = np.array(class_ids, dtype=int)
-        elif hasattr(raw_labels, "cpu"):
+        logger.info("raw_labels type {}", type(raw_labels))
+        if hasattr(raw_labels, "cpu"):
             # Older Transformers versions returned integer ids in labels.
             label_indices = raw_labels.cpu().numpy()
             for det_idx, label_index in enumerate(label_indices):
@@ -437,6 +393,54 @@ class GroundingSAM2:
                     class_names.append("")
                     class_ids.append(class_id)
             class_ids = np.array(class_ids, dtype=int)
+        # elif raw_text_labels is not None:
+        #     # Transformers >= 4.51 recommends text_labels for string object names.
+        #     label_names = [str(label) for label in raw_text_labels]
+        #     logger.debug("Using LLMDet text_labels for class names: {}", label_names)
+        #     for det_idx, class_name in enumerate(label_names):
+        #         stripped_name = class_name.strip()
+        #         if not stripped_name:
+        #             logger.warning(
+        #                 "LLMDet returned an empty text label: det_idx={}, raw_text_labels={}, prompt_tags={}",
+        #                 det_idx,
+        #                 raw_text_labels,
+        #                 texts[0],
+        #             )
+        #             class_names.append("")
+        #             class_ids.append(len(texts[0]) + det_idx)
+        #             continue
+
+        #         matched_tag, matched_id, match_reason, match_score = (
+        #             _resolve_label_to_prompt_tag(
+        #                 stripped_name,
+        #                 texts[0],
+        #             )
+        #         )
+        #         if matched_id is None:
+        #             logger.warning(
+        #                 "LLMDet text label could not be matched to any prompt tag: det_idx={}, text_label={!r}, best_reason={}, best_score={:.3f}, prompt_tags={}",
+        #                 det_idx,
+        #                 stripped_name,
+        #                 match_reason,
+        #                 match_score,
+        #                 texts[0],
+        #             )
+        #             class_names.append(stripped_name)
+        #             class_ids.append(len(texts[0]) + det_idx)
+        #         else:
+        #             if match_reason != "exact":
+        #                 logger.debug(
+        #                     "Matched LLMDet text label to prompt tag: det_idx={}, text_label={!r}, prompt_tag={!r}, match_reason={}, match_score={:.3f}",
+        #                     det_idx,
+        #                     stripped_name,
+        #                     matched_tag,
+        #                     match_reason,
+        #                     match_score,
+        #                 )
+        #             class_names.append(stripped_name)
+        #             class_ids.append(matched_id)
+
+        #     class_ids = np.array(class_ids, dtype=int)
         else:
             # Current Transformers versions may still expose labels as string names,
             # while warning that labels will become integer ids in future versions.
@@ -458,9 +462,11 @@ class GroundingSAM2:
                     class_ids.append(len(texts[0]) + det_idx)
                     continue
 
-                matched_tag, matched_id, match_reason, match_score = _resolve_label_to_prompt_tag(
-                    stripped_name,
-                    texts[0],
+                matched_tag, matched_id, match_reason, match_score = (
+                    _resolve_label_to_prompt_tag(
+                        stripped_name,
+                        texts[0],
+                    )
                 )
                 if matched_id is None:
                     logger.warning(
@@ -558,7 +564,9 @@ class GroundingSAM2:
 
         self._ensure_vlm_client()
         tags = self._vlm_client.tag_objects_in_image(pil_image)
-        empty_tag_indices = [idx for idx, tag in enumerate(tags) if not str(tag).strip()]
+        empty_tag_indices = [
+            idx for idx, tag in enumerate(tags) if not str(tag).strip()
+        ]
         abnormal_tags = [
             tag
             for tag in tags
@@ -667,16 +675,20 @@ class GroundingSAM2:
 
         if show_labels:
             empty_label_indices = [
-                idx for idx, class_name in enumerate(results["labels"]) if not str(class_name).strip()
+                idx
+                for idx, class_name in enumerate(results["labels"])
+                if not str(class_name).strip()
             ]
             if empty_label_indices:
                 logger.warning(
                     "Visualization received empty detection labels; these would appear as score-only without fallback: indices={}, labels={}, scores={}",
                     empty_label_indices,
                     results["labels"],
-                    results["scores"].tolist()
-                    if hasattr(results["scores"], "tolist")
-                    else results["scores"],
+                    (
+                        results["scores"].tolist()
+                        if hasattr(results["scores"], "tolist")
+                        else results["scores"]
+                    ),
                 )
             labels = [
                 f"{str(class_name).strip() or 'unknown'} {confidence:.2f}"

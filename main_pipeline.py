@@ -33,7 +33,7 @@ from keysg.scene_descriptor.scene_descriptor import SceneDescriptor
 from keysg.scene_segmentor.extract_nodes import NodesRepo
 from keysg.scene_segmentor.scene_segmentor import SceneSegmentor
 from keysg.utils.dataset_utils import get_frame_camera_context
-from keysg.utils.logging_setup import setup_logging
+from keysg.utils.logging_setup import setup_logging, install_stream_capture
 from keysg.utils.vis_utils import (
     project_objects_to_masks,
     match_detections_to_objects,
@@ -106,7 +106,13 @@ class KeySGPipeline:
             logger.warning("Failed to save config: {}", e)
 
     def _setup_logging(self) -> None:
-        """Add per-scene file logging."""
+        """Add per-scene file logging.
+
+        In addition to the loguru file sink, ``sys.stdout`` and ``sys.stderr``
+        are wrapped with :class:`StreamTee` so that **all** terminal output
+        (``print()`` calls, third-party library warnings, etc.) is also
+        captured in ``KeySG.log``.
+        """
         try:
             log_path = os.path.join(self.output_dir, "KeySG.log")
             logging_cfg = getattr(self.cfg, "logging", {})
@@ -114,6 +120,10 @@ class KeySGPipeline:
             file_level = getattr(logging_cfg, "file_level", console_level)
             file_level = (file_level or console_level or "INFO").upper()
             logger.add(log_path, level=file_level, rotation="10 MB", retention=3)
+
+            # Capture all stdout/stderr (not just loguru) into the same log file.
+            install_stream_capture(log_path)
+
             logger.info("Logging to {}", log_path)
         except Exception as e:
             logger.warning("Failed to add file logger: {}", e)
@@ -568,7 +578,7 @@ class KeySGPipeline:
                         tag = part.strip()
                         if tag:
                             all_labels.add(tag)
-                text_prompt = ". ".join(sorted(all_labels)) + "."
+                text_prompt = ". ".join(sorted(all_labels))
 
                 for idx in room.sparse_indices:
                     rgb, _, pose = self.dataset[idx]
