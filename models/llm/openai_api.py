@@ -20,14 +20,38 @@ from models.llm._common import encode_image_data_url
 
 load_dotenv()
 
+import os
+
 
 class GPTInterface:
     """Interface for OpenAI GPT API supporting text, vision, structured outputs, and embeddings."""
 
     def __init__(self, client: Optional[openai.OpenAI] = None):
-        # self.client = client or openai.OpenAI()
-        custom_client = httpx.Client(timeout=120, proxy="http://127.0.0.1:10808")
-        self.client = openai.OpenAI(http_client=custom_client)
+        if client is not None:
+            self.client = client
+        else:
+            # 从环境变量读取配置
+            api_key = os.getenv("OPENAI_API_KEY", "dummy")
+            base_url = os.getenv("OPENAI_BASE_URL", None)
+            timeout = int(os.getenv("OPENAI_TIMEOUT", "120"))
+            proxy = os.getenv("OPENAI_PROXY", None)
+            
+            # 构建 httpx 客户端
+            http_client_kwargs = {"timeout": timeout}
+            if proxy:
+                http_client_kwargs["proxy"] = proxy
+            
+            custom_client = httpx.Client(**http_client_kwargs)
+            
+            # 构建 OpenAI 客户端
+            openai_kwargs = {
+                "api_key": api_key,
+                "http_client": custom_client,
+            }
+            if base_url:
+                openai_kwargs["base_url"] = base_url
+            
+            self.client = openai.OpenAI(**openai_kwargs)
 
     def _encode_image(
         self, image: Union[np.ndarray, Image.Image], format: str = "jpeg"

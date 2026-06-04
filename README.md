@@ -125,6 +125,7 @@ keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_renders
 keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh
 keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh --model deepseek-v4-flash
 keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh --model gpt-5.5 --roof-margin 0.5
+keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh --model Qwen/Qwen3-VL-8B-Instruct  --hide-roofs --roof-margin 2.0
 
 
 # Open http://localhost:8080
