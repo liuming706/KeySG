@@ -16,6 +16,7 @@ from PIL import Image
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import httpx
+from loguru import logger
 from models.llm._common import encode_image_data_url
 
 load_dotenv()
@@ -35,14 +36,14 @@ class GPTInterface:
             base_url = os.getenv("OPENAI_BASE_URL", None)
             timeout = int(os.getenv("OPENAI_TIMEOUT", "120"))
             proxy = os.getenv("OPENAI_PROXY", None)
-            
+
             # 构建 httpx 客户端
             http_client_kwargs = {"timeout": timeout}
             if proxy:
                 http_client_kwargs["proxy"] = proxy
-            
+
             custom_client = httpx.Client(**http_client_kwargs)
-            
+
             # 构建 OpenAI 客户端
             openai_kwargs = {
                 "api_key": api_key,
@@ -50,7 +51,7 @@ class GPTInterface:
             }
             if base_url:
                 openai_kwargs["base_url"] = base_url
-            
+
             self.client = openai.OpenAI(**openai_kwargs)
 
     def _encode_image(
@@ -89,6 +90,28 @@ class GPTInterface:
             "unsupported",
         )
         return any(marker in msg for marker in fallback_markers)
+
+    def _is_parsed_result_empty(self, parsed: BaseModel) -> bool:
+        """Check if a parsed Pydantic model has only empty/default values.
+
+        This detects cases where the API returns a valid type but with no real content,
+        which happens with models that don't properly support structured output.
+        """
+        if parsed is None:
+            return True
+        data = parsed.model_dump()
+        for key, value in data.items():
+            if isinstance(value, str) and value.strip():
+                return False
+            if isinstance(value, list) and len(value) > 0:
+                return False
+            if isinstance(value, dict) and value:
+                return False
+            if isinstance(value, (int, float)) and value != 0:
+                return False
+            if isinstance(value, bool) and value:
+                return False
+        return True
 
     def _build_chat_messages(
         self,
@@ -186,6 +209,23 @@ class GPTInterface:
     def _chat_completion_create(self, **kwargs: Any) -> Any:
         return self.client.chat.completions.create(**kwargs)
 
+    def _strip_markdown_code_blocks(self, text: str) -> str:
+        """Strip markdown code block fences from LLM output.
+
+        Many models (especially non-OpenAI models) wrap JSON in markdown
+        code blocks like ```json ... ``` or ``` ... ```. This method
+        strips those fences to extract the raw JSON.
+        """
+        import re as _re
+
+        # Match ```json\n...\n``` or ```\n...\n```
+        # Use non-greedy match to handle multiple code blocks
+        pattern = r"```(?:json|JSON)?\s*\n?(.*?)\n?\s*```"
+        match = _re.search(pattern, text, _re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        return text.strip()
+
     def _structured_via_chat(
         self,
         prompt: Union[str, List[Dict[str, Any]]],
@@ -220,18 +260,70 @@ class GPTInterface:
             response_format={"type": "json_object"},
         )
         text = self._extract_chat_text(response)
+
+        # Log raw response for debugging
+        logger.debug(
+            "[_structured_via_chat] model={}, raw_response_length={}, raw_response_preview={}",
+            model,
+            len(text),
+            text[:500] if text else "(empty)",
+        )
+
+        # First, strip markdown code blocks if present
+        cleaned_text = self._strip_markdown_code_blocks(text)
+
         try:
-            return response_model.model_validate_json(text)
-        except Exception:
+            return response_model.model_validate_json(cleaned_text)
+        except Exception as e:
+            logger.debug(
+                "[_structured_via_chat] Direct parse failed: {}, trying fallback extraction",
+                str(e)[:200],
+            )
             # LLM returned non-JSON text; try to extract JSON from it
             import re as _re
 
-            json_match = _re.search(r"\{.*\}", text, _re.DOTALL)
+            # First, try to extract a JSON array [...] and wrap it into the model's List field
+            array_match = _re.search(r"\[.*\]", cleaned_text, _re.DOTALL)
+            if array_match:
+                try:
+                    parsed_list = json.loads(array_match.group())
+                    if isinstance(parsed_list, list):
+                        # Find the first List[str] field in the model and wrap the list
+                        for (
+                            field_name,
+                            field_info,
+                        ) in response_model.model_fields.items():
+                            annotation = field_info.annotation
+                            origin = getattr(annotation, "__origin__", None)
+                            if origin is list:
+                                logger.info(
+                                    "[_structured_via_chat] Extracted list with {} items for model {}",
+                                    len(parsed_list),
+                                    response_model.__name__,
+                                )
+                                return response_model(**{field_name: parsed_list})
+                except Exception as list_e:
+                    logger.debug(
+                        "[_structured_via_chat] Array extraction failed: {}", list_e
+                    )
+
+            # Then, try to extract a JSON object {...}
+            json_match = _re.search(r"\{.*\}", cleaned_text, _re.DOTALL)
             if json_match:
                 try:
-                    return response_model.model_validate_json(json_match.group())
-                except Exception:
-                    pass
+                    result = response_model.model_validate_json(json_match.group())
+                    logger.info(
+                        "[_structured_via_chat] Extracted JSON object for model {}",
+                        response_model.__name__,
+                    )
+                    return result
+                except Exception as obj_e:
+                    logger.debug(
+                        "[_structured_via_chat] JSON object extraction failed: {}, matched_text={}",
+                        obj_e,
+                        json_match.group()[:200],
+                    )
+
             # Last resort: wrap the raw text into the first string field of the model
             field_name = next(
                 (
@@ -242,7 +334,18 @@ class GPTInterface:
                 None,
             )
             if field_name:
+                logger.warning(
+                    "[_structured_via_chat] All JSON extraction failed, wrapping raw text in field '{}'",
+                    field_name,
+                )
                 return response_model(**{field_name: text})
+
+            logger.error(
+                "[_structured_via_chat] Complete failure for model {}, response_model={}, text_preview={}",
+                model,
+                response_model.__name__,
+                text[:300] if text else "(empty)",
+            )
             raise
 
     def text_prompt(
@@ -382,8 +485,17 @@ class GPTInterface:
 
             response = self.client.responses.parse(**api_kwargs)
             parsed = response.output_parsed
-            # If output_parsed is not the expected type, fall back
-            if not isinstance(parsed, response_model):
+            # If output_parsed is not the expected type or is empty, fall back
+            if not isinstance(parsed, response_model) or self._is_parsed_result_empty(
+                parsed
+            ):
+                logger.info(
+                    "[structured_prompt] parsed empty/wrong type (type={}, empty={}), "
+                    "falling back to _structured_via_chat, model={}",
+                    type(parsed).__name__,
+                    self._is_parsed_result_empty(parsed) if parsed else True,
+                    model,
+                )
                 return self._structured_via_chat(
                     prompt,
                     response_model=response_model,
@@ -394,6 +506,12 @@ class GPTInterface:
                 )
             return parsed
         except Exception as e:
+            logger.warning(
+                "[structured_prompt] responses.parse failed ({}), "
+                "falling back to _structured_via_chat, model={}",
+                e,
+                model,
+            )
             return self._structured_via_chat(
                 prompt,
                 response_model=response_model,
@@ -456,10 +574,35 @@ class GPTInterface:
             response = await asyncio.to_thread(
                 self.client.responses.parse, **api_kwargs
             )
-            return response.output_parsed
+            parsed = response.output_parsed
+            # If output_parsed is not the expected type or is empty, fall back
+            if not isinstance(parsed, response_model) or self._is_parsed_result_empty(
+                parsed
+            ):
+                logger.info(
+                    "[_process_one_structured_prompt] parsed empty/wrong type "
+                    "(type={}, empty={}), falling back to _structured_via_chat, model={}",
+                    type(parsed).__name__,
+                    self._is_parsed_result_empty(parsed) if parsed else True,
+                    model,
+                )
+                return await asyncio.to_thread(
+                    self._structured_via_chat,
+                    prompt,
+                    response_model,
+                    model,
+                    image,
+                    detail,
+                    api_kwargs.get("instructions"),
+                )
+            return parsed
         except Exception as e:
-            if not self._should_fallback_to_chat(e):
-                raise
+            logger.warning(
+                "[_process_one_structured_prompt] responses.parse failed ({}), "
+                "falling back to _structured_via_chat, model={}",
+                e,
+                model,
+            )
             return await asyncio.to_thread(
                 self._structured_via_chat,
                 prompt,

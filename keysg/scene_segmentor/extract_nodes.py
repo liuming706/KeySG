@@ -187,8 +187,25 @@ class NodesRepo:
 
         text_prompt = self.tags
         if not text_prompt:
+            logger.info(
+                "Frame {}: VLM object_tags is empty, falling back to RAM++ auto-tagging...",
+                frame_idx,
+            )
             ram_tags = self.gsam2.tag_image(rgb_image)
             text_prompt = self.gsam2.ram_tags_to_prompt(ram_tags)
+            ram_tag_list = [t.strip() for t in ram_tags.split("|") if t.strip()] if ram_tags else []
+            logger.info(
+                "Frame {}: RAM++ generated {} tags, text_prompt={!r}",
+                frame_idx,
+                len(ram_tag_list),
+                text_prompt[:500] if text_prompt else "",
+            )
+        else:
+            logger.debug(
+                "Frame {}: Using VLM object_tags as text_prompt ({:.0f} chars)",
+                frame_idx,
+                len(text_prompt),
+            )
 
         results = self.gsam2.predict(
             image=rgb_image, text_prompt=text_prompt, box_threshold=box_threshold

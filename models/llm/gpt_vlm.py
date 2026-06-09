@@ -40,6 +40,10 @@ class GPT_VLMInterface:
         self, image: Image.Image, max_tags: int = 100
     ) -> List[str]:
         """Tag visible objects in an image."""
+        from loguru import logger
+        logger.info(
+            "[tag_objects_in_image] START model={}, max_tags={}", self.model, max_tags
+        )
         prompt = f"List all distinct object categories present in this image. Cap at {max_tags} items."
         try:
             response = self.client.structured_prompt(
@@ -52,12 +56,26 @@ class GPT_VLMInterface:
                 detail="high",
             )
             if isinstance(response, ObjectTag):
-                return response.tags[:max_tags]
+                tags = response.tags[:max_tags]
+                logger.info(
+                    "[tag_objects_in_image] ObjectTag response: {} tags, first 20={}",
+                    len(tags), tags[:20],
+                )
+                return tags
             # Fallback: LLM may return a raw list instead of an ObjectTag object
             if isinstance(response, list):
-                return response[:max_tags]
+                tags = response[:max_tags]
+                logger.info(
+                    "[tag_objects_in_image] list response: {} tags, first 20={}",
+                    len(tags), tags[:20],
+                )
+                return tags
+            logger.warning(
+                "[tag_objects_in_image] Unexpected response type={}, value={}",
+                type(response).__name__, str(response)[:200],
+            )
         except Exception as e:
-            print(f"Error in tag_objects_in_image: {e}")
+            logger.error("[tag_objects_in_image] structured_prompt error: {}", e)
             # Try parsing raw JSON list as fallback
             try:
                 raw = self.client.vision_prompt(
@@ -66,11 +84,23 @@ class GPT_VLMInterface:
                     model=self.model,
                     instructions=system_instruction_tagging(),
                 )
+                logger.info(
+                    "[tag_objects_in_image] Fallback vision_prompt raw response: {}",
+                    str(raw)[:500],
+                )
                 raw_list = json.loads(raw)
                 if isinstance(raw_list, list):
-                    return raw_list[:max_tags]
-            except Exception:
-                pass
+                    tags = raw_list[:max_tags]
+                    logger.info(
+                        "[tag_objects_in_image] Fallback JSON parsed: {} tags, first 20={}",
+                        len(tags), tags[:20],
+                    )
+                    return tags
+            except Exception as fallback_e:
+                logger.error(
+                    "[tag_objects_in_image] Fallback also failed: {}", fallback_e
+                )
+        logger.warning("[tag_objects_in_image] Returning empty list (all paths failed)")
         return []
 
     def tag_functional_elements_in_image(
