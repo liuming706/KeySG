@@ -225,6 +225,7 @@ class KeySGGraph:
         top_k_objects: int = 10,
         top_k_frames: int = 4,
         max_frame_images: int = 4,
+        qa_method: str = "chat",
     ) -> Dict[str, Any]:
         """Find the object matching a natural-language query.
 
@@ -247,6 +248,7 @@ class KeySGGraph:
             max_frame_images=max_frame_images,
             retriever=self._ensure_rag(),
             objects=objects_list,
+            qa_method=qa_method,
         )
 
     def search_frames(
@@ -255,6 +257,7 @@ class KeySGGraph:
         mode: str = "rag_only",
         top_k: int = 10,
         max_frame_images: int = 10,
+        qa_method: str = "chat",
     ) -> Dict[str, Any]:
         """Search keyframes by natural-language query.
 
@@ -264,6 +267,7 @@ class KeySGGraph:
                   with gpt-5.4-mini, high detail).
             top_k: Maximum number of frames to return.
             max_frame_images: Max images passed to LLM (rag_llm only).
+            qa_method: 'parse' (OpenAI responses.parse) or 'chat' (JSON extraction).
 
         Example:
             result = graph.search_frames("kitchen area with appliances", mode="rag_only")
@@ -280,6 +284,7 @@ class KeySGGraph:
             max_frame_images=max_frame_images,
             retriever=self._ensure_rag(),
             objects=objects_list,
+            qa_method=qa_method,
         )
 
     def get_object_keyframes(self, object_id: str) -> List[Dict[str, Any]]:

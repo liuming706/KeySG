@@ -285,6 +285,21 @@ class GPTInterface:
             # LLM returned non-JSON text; try to extract JSON from it
             import re as _re
 
+            # Try to extract the "properties" wrapper that some LLMs (e.g., qwen) produce.
+            # The LLM may return {"properties": {...}} instead of the flat object.
+            try:
+                raw_obj = json.loads(cleaned_text)
+                if isinstance(raw_obj, dict) and "properties" in raw_obj:
+                    props = raw_obj["properties"]
+                    if isinstance(props, dict):
+                        logger.info(
+                            "[_structured_via_chat] Extracted 'properties' wrapper for model {}",
+                            response_model.__name__,
+                        )
+                        return response_model.model_validate(props)
+            except Exception:
+                pass  # Fall through to other extraction methods
+
             # First, try to extract a JSON array [...] and wrap it into the model's List field
             array_match = _re.search(r"\[.*\]", cleaned_text, _re.DOTALL)
             if array_match:
@@ -454,8 +469,12 @@ class GPTInterface:
         When ``qa_method`` is ``"responses_parse"`` (default), uses OpenAI Responses API
         with fallback to Chat Completions.
         """
-        # If qa_method is "chat", use Chat Completions directly
-        if self.qa_method == "chat":
+        # Extract per-call method override (if any)
+        method = kwargs.pop("method", None)
+        effective_method = method or self.qa_method
+
+        # If effective_method is "chat", use Chat Completions directly
+        if effective_method == "chat":
             instructions = kwargs.get("instructions")
             logger.debug("[structured_prompt] Using chat method, model={}", model)
             return self._structured_via_chat(
@@ -557,8 +576,12 @@ class GPTInterface:
         When ``qa_method`` is ``"responses_parse"`` (default), uses OpenAI Responses API
         with fallback to Chat Completions.
         """
-        # If qa_method is "chat", use Chat Completions directly
-        if self.qa_method == "chat":
+        # Extract per-call method override (if any)
+        method = kwargs.pop("method", None)
+        effective_method = method or self.qa_method
+
+        # If effective_method is "chat", use Chat Completions directly
+        if effective_method == "chat":
             instructions = kwargs.get("instructions")
             logger.debug(
                 "[_process_one_structured_prompt] Using chat method, model={}", model

@@ -141,6 +141,7 @@ def analyze_and_expand_query(
     *,
     model: str = "gpt-5.4",
     client: Optional[Any] = None,
+    qa_method: str = "responses_parse",
 ) -> QueryAnalysisResult:
     """Analyze a user query and generate expansion terms.
 
@@ -148,7 +149,8 @@ def analyze_and_expand_query(
         query: Raw user text.
         model: LLM model name (must support structured output for best path).
         client: Optional pre-instantiated `GPTInterface`.
-        max_expanded_terms: Hard cap for expansion list trimming.
+        qa_method: 'responses_parse' (OpenAI Responses API) or 'chat' (Chat Completions API).
+                   Use 'chat' for non-OpenAI models like qwen3.7-plus.
 
     Returns:
         QueryAnalysisResult object.
@@ -157,7 +159,7 @@ def analyze_and_expand_query(
         raise RuntimeError(
             "GPTInterface not available. Ensure OpenAI dependencies are installed."
         )
-    gpt = client or GPTInterface()
+    gpt = client or GPTInterface(qa_method=qa_method)
 
     # First attempt: structured output
     structured = gpt.structured_prompt(  # type: ignore[attr-defined]

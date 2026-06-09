@@ -268,6 +268,7 @@ def _run_grounding_query(
     objects=None,
     model_analysis: str = "gpt-5.4",
     model_selection: str = "gpt-5.4-mini",
+    qa_method: str = "chat",
 ) -> Dict[str, Any]:
     """RAG retrieval + LLM object selection — mirrors nr3d_eval._run_keysg_rag pipeline."""
     from pydantic import BaseModel, Field
@@ -308,6 +309,7 @@ def _run_grounding_query(
             response_model=_QuerySchema,
             model=model_analysis,
             instructions=_QUERY_ANALYSIS_INSTRUCTIONS,
+            method=qa_method,
         )
         target_q = analysis.target_object or query
         anchor_objects = analysis.anchor_objects or []
@@ -407,6 +409,7 @@ def _run_grounding_query(
                 image=frame_images if frame_images else None,
                 detail="high",
                 instructions=_OBJECT_SELECTION_SYSTEM_PROMPT,
+                method=qa_method,
             )
             pred_id = sel.object_id or sel.guess_id
             confidence = sel.confidence
@@ -488,6 +491,7 @@ def _run_keyframe_search(
     retriever=None,
     objects=None,
     model: str = "gpt-5.4-mini",
+    qa_method: str = "chat",
 ) -> Dict[str, Any]:
     """Search keyframes by query with two modes.
 
@@ -588,6 +592,7 @@ def _run_keyframe_search(
             image=frame_images if frame_images else None,
             detail="high",
             instructions=_FRAME_RERANK_SYSTEM_PROMPT,
+            method=qa_method,
         )
         # Merge LLM ranking with original frame data
         llm_ranked = []
@@ -622,6 +627,7 @@ def _run_open_qa(
     objects=None,
     model_analysis: str = "gpt-5.4",
     model_answer: str = "gpt-5.4",
+    qa_method: str = "chat",
 ) -> Dict[str, Any]:
     """RAG retrieval + LLM for open-ended scene questions — same context pipeline as grounding."""
     from pydantic import BaseModel, Field
@@ -652,6 +658,7 @@ def _run_open_qa(
             response_model=_QuerySchema,
             model=model_analysis,
             instructions=_QUERY_ANALYSIS_INSTRUCTIONS,
+            method=qa_method,
         )
         target_q = analysis.target_object or question
         anchor_objects = analysis.anchor_objects or []
@@ -731,6 +738,7 @@ def _run_open_qa(
             image=frame_images if frame_images else None,
             detail="high",
             instructions=_OPEN_QA_SYSTEM_PROMPT,
+            method=qa_method,
         )
         if isinstance(resp, SceneAnswer):
             return resp.model_dump()
@@ -756,11 +764,13 @@ class KeySGVisualizer:
         model: str = "gpt-5.4",
         show_roofs: bool = True,
         roof_margin: float = 0.12,
+        qa_method: str = "chat",
     ):
         self.scene_dir = scene_dir
         self.port = port
         self.model = model
         self.roof_margin = roof_margin
+        self.qa_method = qa_method
         self.server: Optional[viser.ViserServer] = None
 
         # Scene data
@@ -1537,6 +1547,7 @@ class KeySGVisualizer:
                         objects=self.objects,
                         model_analysis=self.model,
                         model_selection=self.model,
+                        qa_method=self.qa_method,
                     )
                     obj_id = result.get("object_id")
                     confidence = result.get("confidence", 0.0)
@@ -1604,6 +1615,7 @@ class KeySGVisualizer:
                         objects=self.objects,
                         model_analysis=self.model,
                         model_answer=self.model,
+                        qa_method=self.qa_method,
                     )
                     answer = response.get("answer", "")
                     reasoning = response.get("reasoning", "")
@@ -1648,6 +1660,7 @@ class KeySGVisualizer:
                         retriever=self._ensure_retriever(),
                         objects=self.objects,
                         model=self.model,
+                        qa_method=self.qa_method,
                     )
                     frames = search_result.get("frames", [])
                     if not frames:
@@ -1736,6 +1749,13 @@ def main() -> None:
         default=0.12,
         help="Vertical margin below ceiling used when hiding roofs, in meters (default: 0.12)",
     )
+    parser.add_argument(
+        "--qa-method",
+        type=str,
+        default="chat",
+        choices=["responses_parse", "chat"],
+        help="Method for structured LLM output: 'parse' (OpenAI responses.parse) or 'chat' (JSON extraction from chat). Use 'chat' for non-OpenAI models like Qwen. (default: chat)",
+    )
     args = parser.parse_args()
     KeySGVisualizer(
         args.scene_dir,
@@ -1743,6 +1763,7 @@ def main() -> None:
         model=args.model,
         show_roofs=not args.hide_roofs,
         roof_margin=args.roof_margin,
+        qa_method=args.qa_method,
     ).run()
 
 

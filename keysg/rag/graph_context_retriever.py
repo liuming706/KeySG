@@ -88,7 +88,7 @@ def _chunk_content_hash(chunk: Chunk) -> str:
 
 
 class GraphContextRetriever:
-    def __init__(self, output_dir: str):
+    def __init__(self, output_dir: str, qa_method: str = "responses_parse"):
         # Base directory
         self.output_dir = output_dir.rstrip("/")
         self.include_node_pickle_objects = True
@@ -107,6 +107,9 @@ class GraphContextRetriever:
         self.gpt = None
         self.clip = None
         self.clip_model_id: Optional[str] = None
+        
+        # QA method for LLM API
+        self.qa_method = qa_method
 
         # Local embedder (sentence-transformers)
         self.embedder = None
@@ -398,7 +401,7 @@ class GraphContextRetriever:
                     raise RuntimeError(
                         "GPTInterface not available. Ensure OpenAI dependencies are installed."
                     )
-            self.gpt = GPTInterface()
+            self.gpt = GPTInterface(qa_method=self.qa_method)
 
     def _ensure_embedder(self, model_name: str = None):
         """Lazy-load local sentence-transformer embedder."""
