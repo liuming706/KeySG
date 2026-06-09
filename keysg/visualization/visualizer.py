@@ -167,7 +167,10 @@ def _load_frame_images(frame_chunks: List, max_images: int = 4) -> List:
     images = []
     for chunk in frame_chunks[:max_images]:
         meta = chunk.metadata or {}
-        path = meta.get("labeled_image_path") or meta.get("image_path")
+        # Prefer the original RGB image for visual understanding. Labeled images
+        # are useful for mapping visible objects to ids, but dense labels can
+        # occlude scene details and make the image harder to inspect.
+        path = meta.get("image_path") or meta.get("labeled_image_path")
         if not path or not os.path.isfile(path):
             continue
         try:
@@ -434,8 +437,8 @@ def _run_grounding_query(
                             "frame_id": chunk.id,
                             "frame_index": fidx,
                             "room_id": meta.get("room_id", ""),
-                            "image_path": meta.get("labeled_image_path")
-                            or meta.get("image_path", ""),
+                            "image_path": meta.get("image_path")
+                            or meta.get("labeled_image_path", ""),
                             "description": chunk.content[:200] if chunk.content else "",
                         }
                     )
@@ -538,8 +541,8 @@ def _run_keyframe_search(
                 "room_id": meta.get("room_id", ""),
                 "score": float(score_map.get(chunk.id, 0.0)),
                 "description": chunk.content[:300] if chunk.content else "",
-                "image_path": meta.get("labeled_image_path")
-                or meta.get("image_path", ""),
+                "image_path": meta.get("image_path")
+                or meta.get("labeled_image_path", ""),
                 "objects_in_frame": meta.get("node_tags", []),
             }
         )
@@ -1438,7 +1441,11 @@ class KeySGVisualizer:
             @focus_scene_btn.on_click
             def _(_):
                 self._focus_scene_center()
-                c = self._scene_center if self._scene_center is not None else np.zeros(3)
+                c = (
+                    self._scene_center
+                    if self._scene_center is not None
+                    else np.zeros(3)
+                )
                 nav_status.content = (
                     f"**Pivot:** scene center "
                     f"x={c[0]:.3f}, y={c[1]:.3f}, z={c[2]:.3f}"

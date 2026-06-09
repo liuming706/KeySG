@@ -317,7 +317,7 @@ class KeySGGraph:
                         "frame_id": f"frame_{room.id}_{kf.index}",
                         "frame_index": kf.index,
                         "room_id": room.id,
-                        "image_path": kf.labeled_image_path or kf.image_path,
+                        "image_path": kf.image_path or kf.labeled_image_path,
                         "description": kf.description[:200] if kf.description else "",
                     })
 
