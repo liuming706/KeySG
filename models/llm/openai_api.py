@@ -27,7 +27,8 @@ import os
 class GPTInterface:
     """Interface for OpenAI GPT API supporting text, vision, structured outputs, and embeddings."""
 
-    def __init__(self, client: Optional[openai.OpenAI] = None):
+    def __init__(self, client: Optional[openai.OpenAI] = None, qa_method: str = "responses_parse"):
+        self.qa_method = qa_method
         if client is not None:
             self.client = client
         else:
@@ -445,7 +446,27 @@ class GPTInterface:
         detail: str = "auto",
         **kwargs: Any,
     ) -> Union[BaseModel, Iterator[Any]]:
-        """Generate structured JSON response conforming to a Pydantic model."""
+        """Generate structured JSON response conforming to a Pydantic model.
+
+        When ``qa_method`` is ``"chat"``, uses Chat Completions API directly.
+        When ``qa_method`` is ``"responses_parse"`` (default), uses OpenAI Responses API
+        with fallback to Chat Completions.
+        """
+        # If qa_method is "chat", use Chat Completions directly
+        if self.qa_method == "chat":
+            instructions = kwargs.get("instructions")
+            logger.debug(
+                "[structured_prompt] Using chat method, model={}", model
+            )
+            return self._structured_via_chat(
+                prompt,
+                response_model=response_model,
+                model=model,
+                image=image,
+                detail=detail,
+                instructions=instructions,
+            )
+
         api_kwargs = self._prepare_common_kwargs(**kwargs)
         instructions = api_kwargs.get("instructions")
 
@@ -530,7 +551,28 @@ class GPTInterface:
         detail: str,
         **kwargs: Any,
     ) -> BaseModel:
-        """Helper for async structured prompt processing."""
+        """Helper for async structured prompt processing.
+
+        When ``qa_method`` is ``"chat"``, uses Chat Completions API directly.
+        When ``qa_method`` is ``"responses_parse"`` (default), uses OpenAI Responses API
+        with fallback to Chat Completions.
+        """
+        # If qa_method is "chat", use Chat Completions directly
+        if self.qa_method == "chat":
+            instructions = kwargs.get("instructions")
+            logger.debug(
+                "[_process_one_structured_prompt] Using chat method, model={}", model
+            )
+            return await asyncio.to_thread(
+                self._structured_via_chat,
+                prompt,
+                response_model,
+                model,
+                image,
+                detail,
+                instructions,
+            )
+
         api_kwargs = self._prepare_common_kwargs(**kwargs)
 
         final_input: Union[str, List[Dict[str, Any]]]

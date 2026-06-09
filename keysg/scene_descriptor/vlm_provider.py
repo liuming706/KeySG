@@ -11,10 +11,11 @@ def create_vlm(config: Optional[Dict[str, Any]] = None) -> Any:
     Create a VLM interface based on configuration.
 
     Args:
-        config: Dict with 'provider', 'model', and optionally 'text_model'
+        config: Dict with 'provider', 'model', and optionally 'text_model', 'qa_method'
             - provider: 'openai', 'ollama', etc. (default: 'openai')
             - model: Model name (default: 'gpt-5.4' for openai)
             - text_model: Text-only model for ollama
+            - qa_method: 'responses_parse' (OpenAI Responses API) or 'chat' (Chat Completions API)
 
     Returns:
         VLM interface instance
@@ -23,11 +24,12 @@ def create_vlm(config: Optional[Dict[str, Any]] = None) -> Any:
     provider = str(cfg.get("provider", "openai")).strip().lower()
     model = cfg.get("model")
     text_model = cfg.get("text_model")
+    qa_method = cfg.get("qa_method", "responses_parse")
 
     if provider in ("openai", "gpt", "openai_api"):
         from models.llm.gpt_vlm import GPT_VLMInterface
 
-        return GPT_VLMInterface(model=model or "gpt-5.4")
+        return GPT_VLMInterface(model=model or "gpt-5.4", qa_method=qa_method)
 
     if provider in ("ollama", "qwen3-vl", "qwen3"):
         from models.llm.ollama_vlm import OllamaVLMInterface
@@ -37,4 +39,4 @@ def create_vlm(config: Optional[Dict[str, Any]] = None) -> Any:
     logger.warning(f"Unknown VLM provider '{provider}', defaulting to OpenAI")
     from models.llm.gpt_vlm import GPT_VLMInterface
 
-    return GPT_VLMInterface(model=model or "gpt-5.4")
+    return GPT_VLMInterface(model=model or "gpt-5.4", qa_method=qa_method)

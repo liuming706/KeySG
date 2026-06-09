@@ -32,8 +32,8 @@ from models.llm.prompts import (
 class GPT_VLMInterface:
     """VLM interface using GPTInterface for tagging, describing, and summarizing."""
 
-    def __init__(self, model: str = "deepseek-v4-flash"):
-        self.client = GPTInterface()
+    def __init__(self, model: str = "deepseek-v4-flash", qa_method: str = "responses_parse"):
+        self.client = GPTInterface(qa_method=qa_method)
         self.model = model
 
     def tag_objects_in_image(

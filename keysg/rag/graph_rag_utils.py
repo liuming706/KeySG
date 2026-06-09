@@ -44,6 +44,7 @@ try:  # pragma: no cover - optional dependency
     from keysg.utils.clip_utils import (
         CLIPFeatureExtractor,
         DEFAULT_CLIP_CONFIG as _DEFAULT_CLIP_CONFIG,
+        get_shared_clip_extractor,
     )
 except ImportError:  # pragma: no cover
     # Fallback for when running from within the package
@@ -59,10 +60,12 @@ except ImportError:  # pragma: no cover
         from keysg.utils.clip_utils import (
             CLIPFeatureExtractor,
             DEFAULT_CLIP_CONFIG as _DEFAULT_CLIP_CONFIG,
+            get_shared_clip_extractor,
         )
     except Exception:
         CLIPFeatureExtractor = None  # type: ignore
         _DEFAULT_CLIP_CONFIG = None  # type: ignore
+        get_shared_clip_extractor = None  # type: ignore
 
 
 @dataclass
@@ -155,7 +158,7 @@ def ensure_clip(retriever, clip_config: Optional[Dict[str, Any]] = None):
     Raises:
         RuntimeError: if CLIP dependencies are missing.
     """
-    if CLIPFeatureExtractor is None:
+    if CLIPFeatureExtractor is None or get_shared_clip_extractor is None:
         raise RuntimeError(
             "CLIPFeatureExtractor unavailable. Install open_clip and ensure utils.clip_utils imported."
         )
@@ -163,7 +166,7 @@ def ensure_clip(retriever, clip_config: Optional[Dict[str, Any]] = None):
         cfg = (_DEFAULT_CLIP_CONFIG or {}).copy()
         if clip_config:
             cfg.update(clip_config)
-        retriever.clip = CLIPFeatureExtractor(cfg)
+        retriever.clip = get_shared_clip_extractor(cfg)
         retriever.clip_model_id = cfg.get("model_name")
 
 
@@ -501,13 +504,7 @@ def build_chunks_from_descriptions(
             room_type = summary.get("room_type") or ""
             room_summary = summary.get("room_summary") or ""
             layout = summary.get("layout") or ""
-            summary_txt = (
-                room_type
-                + " "
-                + room_summary
-                + " "
-                + layout
-            )
+            summary_txt = room_type + " " + room_summary + " " + layout
         else:
             summary_txt = summary or ""
         chunks.append(

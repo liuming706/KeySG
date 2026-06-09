@@ -26,8 +26,9 @@ load:
 # Vision-language model configuration for room descriptions
 vlm:
   provider: openai # openai | ollama
-  model: qwen3.6-plus # OpenAI model or Ollama model name (e.g., Qwen/Qwen3-VL-8B-Instruct)
+  model: qwen3.7-plus # OpenAI model or Ollama model name (e.g., Qwen/Qwen3-VL-8B-Instruct)
   # text_model: sensenova-6.7-flash-lite  # Optional separate model for text-only summarization
+  qa_method: chat # QA method: responses_parse (OpenAI Responses API) | chat (Chat Completions API)
 
   # Scene segmentation parameters
 segmentation:

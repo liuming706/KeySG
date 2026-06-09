@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 import numpy as np
 from collections import Counter
@@ -344,6 +344,39 @@ class CLIPFeatureExtractor:
         else:
             feats = np.mean(feats, axis=0)
         return feats
+
+
+_CLIP_EXTRACTOR_CACHE: Dict[Tuple[Tuple[str, str], ...], CLIPFeatureExtractor] = {}
+
+
+def _normalize_clip_config(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Return the effective CLIP config after applying project defaults."""
+    full_config = DEFAULT_CLIP_CONFIG.copy()
+    if config:
+        full_config.update(config)
+    return full_config
+
+
+def _clip_config_cache_key(config: Optional[Dict[str, Any]] = None) -> Tuple[Tuple[str, str], ...]:
+    """Create a stable, hashable cache key for a CLIP configuration."""
+    full_config = _normalize_clip_config(config)
+    return tuple(sorted((str(key), repr(value)) for key, value in full_config.items()))
+
+
+def get_shared_clip_extractor(
+    config: Optional[Dict[str, Any]] = None,
+) -> CLIPFeatureExtractor:
+    """Return a process-wide shared CLIP extractor for the given configuration.
+
+    Loading OpenCLIP/SigLIP models is expensive. The pipeline can request CLIP from
+    different subsystems (node extraction and Graph RAG), so centralizing the cache
+    here prevents the same model/configuration from being loaded more than once in a
+    single Python process.
+    """
+    key = _clip_config_cache_key(config)
+    if key not in _CLIP_EXTRACTOR_CACHE:
+        _CLIP_EXTRACTOR_CACHE[key] = CLIPFeatureExtractor(_normalize_clip_config(config))
+    return _CLIP_EXTRACTOR_CACHE[key]
 
 
 # Example usage

@@ -19,7 +19,7 @@ from tqdm import tqdm
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from keysg.scene_segmentor.obj_node import ObjNode
-from keysg.utils.clip_utils import CLIPFeatureExtractor
+from keysg.utils.clip_utils import CLIPFeatureExtractor, get_shared_clip_extractor
 from keysg.utils.dataset_utils import (
     get_frame_camera_context,
     project_2d_mask_to_3d_for_frame,
@@ -131,7 +131,7 @@ class NodesRepo:
 
         if NodesRepo._shared_clip is None:
             logger.info("[NodesRepo] Loading CLIP extractor...")
-            NodesRepo._shared_clip = CLIPFeatureExtractor(dict(self.clip_config))
+            NodesRepo._shared_clip = get_shared_clip_extractor(dict(self.clip_config))
         self.clip_extractor = NodesRepo._shared_clip
 
     def _build_gsam_kwargs(
@@ -193,7 +193,11 @@ class NodesRepo:
             )
             ram_tags = self.gsam2.tag_image(rgb_image)
             text_prompt = self.gsam2.ram_tags_to_prompt(ram_tags)
-            ram_tag_list = [t.strip() for t in ram_tags.split("|") if t.strip()] if ram_tags else []
+            ram_tag_list = (
+                [t.strip() for t in ram_tags.split("|") if t.strip()]
+                if ram_tags
+                else []
+            )
             logger.info(
                 "Frame {}: RAM++ generated {} tags, text_prompt={!r}",
                 frame_idx,
@@ -308,7 +312,9 @@ class NodesRepo:
             return int(np.count_nonzero(np.logical_and(mask_indices, valid_depth)))
 
         mask_arr = _mask_array(mask_2d)
-        mask_area = int(np.count_nonzero(mask_arr > 0)) if mask_arr is not None else None
+        mask_area = (
+            int(np.count_nonzero(mask_arr > 0)) if mask_arr is not None else None
+        )
         score_value = _to_python_scalar(score)
         score_text = f"{float(score_value):.4f}" if score_value is not None else "None"
         bbox_text = _format_bbox(bbox_2d)
