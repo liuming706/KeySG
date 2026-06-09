@@ -27,7 +27,9 @@ import os
 class GPTInterface:
     """Interface for OpenAI GPT API supporting text, vision, structured outputs, and embeddings."""
 
-    def __init__(self, client: Optional[openai.OpenAI] = None, qa_method: str = "responses_parse"):
+    def __init__(
+        self, client: Optional[openai.OpenAI] = None, qa_method: str = "responses_parse"
+    ):
         self.qa_method = qa_method
         if client is not None:
             self.client = client
@@ -276,7 +278,7 @@ class GPTInterface:
         try:
             return response_model.model_validate_json(cleaned_text)
         except Exception as e:
-            logger.debug(
+            logger.warning(
                 "[_structured_via_chat] Direct parse failed: {}, trying fallback extraction",
                 str(e)[:200],
             )
@@ -304,7 +306,7 @@ class GPTInterface:
                                 )
                                 return response_model(**{field_name: parsed_list})
                 except Exception as list_e:
-                    logger.debug(
+                    logger.warning(
                         "[_structured_via_chat] Array extraction failed: {}", list_e
                     )
 
@@ -319,7 +321,7 @@ class GPTInterface:
                     )
                     return result
                 except Exception as obj_e:
-                    logger.debug(
+                    logger.warning(
                         "[_structured_via_chat] JSON object extraction failed: {}, matched_text={}",
                         obj_e,
                         json_match.group()[:200],
@@ -455,9 +457,7 @@ class GPTInterface:
         # If qa_method is "chat", use Chat Completions directly
         if self.qa_method == "chat":
             instructions = kwargs.get("instructions")
-            logger.debug(
-                "[structured_prompt] Using chat method, model={}", model
-            )
+            logger.debug("[structured_prompt] Using chat method, model={}", model)
             return self._structured_via_chat(
                 prompt,
                 response_model=response_model,

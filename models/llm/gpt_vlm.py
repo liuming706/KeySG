@@ -32,7 +32,9 @@ from models.llm.prompts import (
 class GPT_VLMInterface:
     """VLM interface using GPTInterface for tagging, describing, and summarizing."""
 
-    def __init__(self, model: str = "deepseek-v4-flash", qa_method: str = "responses_parse"):
+    def __init__(
+        self, model: str = "deepseek-v4-flash", qa_method: str = "responses_parse"
+    ):
         self.client = GPTInterface(qa_method=qa_method)
         self.model = model
 
@@ -41,6 +43,7 @@ class GPT_VLMInterface:
     ) -> List[str]:
         """Tag visible objects in an image."""
         from loguru import logger
+
         logger.info(
             "[tag_objects_in_image] START model={}, max_tags={}", self.model, max_tags
         )
@@ -59,7 +62,8 @@ class GPT_VLMInterface:
                 tags = response.tags[:max_tags]
                 logger.info(
                     "[tag_objects_in_image] ObjectTag response: {} tags, first 20={}",
-                    len(tags), tags[:20],
+                    len(tags),
+                    tags[:20],
                 )
                 return tags
             # Fallback: LLM may return a raw list instead of an ObjectTag object
@@ -67,12 +71,14 @@ class GPT_VLMInterface:
                 tags = response[:max_tags]
                 logger.info(
                     "[tag_objects_in_image] list response: {} tags, first 20={}",
-                    len(tags), tags[:20],
+                    len(tags),
+                    tags[:20],
                 )
                 return tags
             logger.warning(
                 "[tag_objects_in_image] Unexpected response type={}, value={}",
-                type(response).__name__, str(response)[:200],
+                type(response).__name__,
+                str(response)[:200],
             )
         except Exception as e:
             logger.error("[tag_objects_in_image] structured_prompt error: {}", e)
@@ -93,7 +99,8 @@ class GPT_VLMInterface:
                     tags = raw_list[:max_tags]
                     logger.info(
                         "[tag_objects_in_image] Fallback JSON parsed: {} tags, first 20={}",
-                        len(tags), tags[:20],
+                        len(tags),
+                        tags[:20],
                     )
                     return tags
             except Exception as fallback_e:
@@ -175,7 +182,7 @@ class GPT_VLMInterface:
     def describe_image_with_nodes(
         self,
         image: Image.Image,
-        visible_nodes: Dict[str, str],
+        visible_nodes: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Describe an image with known 3D object nodes."""
         if not visible_nodes:
@@ -185,6 +192,8 @@ class GPT_VLMInterface:
         prompt = (
             f"Describe this RGB image with knowledge of the following 3D object nodes that are visible in this frame:\n\n"
             f"Visible Objects:\n{node_info}\n\n"
+            f"Some nodes may include bbox_2d=[x1,y1,x2,y2] in pixel coordinates on the original, unannotated image. "
+            f"When refining each node's common name, inspect the original image content inside that node's bbox first, and use the original label only as a hint. "
             f"When describing objects that you can clearly identify and match to the provided nodes, "
             f"reference them using their node ID (e.g., '{'node_id'}'). "
             f"Describe the spatial relationships, states, and interactions between these grounded objects and any other visible elements."
@@ -478,7 +487,7 @@ class GPT_VLMInterface:
     async def describe_images_with_nodes_batch(
         self,
         images: List[Image.Image],
-        visible_nodes_list: List[Dict[str, str]],
+        visible_nodes_list: List[Dict[str, Any]],
         batch_size: int = 20,
     ) -> List[Dict[str, Any]]:
         """Describe multiple images with nodes using async batch processing."""
@@ -571,7 +580,7 @@ class GPT_VLMInterface:
         ]
 
     async def _batch_describe_with_nodes(
-        self, images: List[Image.Image], nodes_list: List[Dict[str, str]]
+        self, images: List[Image.Image], nodes_list: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         prompts = []
         for nodes in nodes_list:
@@ -584,6 +593,8 @@ class GPT_VLMInterface:
                 prompts.append(
                     f"Describe this RGB image with knowledge of the following 3D object nodes that are visible in this frame:\n\n"
                     f"Visible Objects:\n{node_info}\n\n"
+                    f"Some nodes may include bbox_2d=[x1,y1,x2,y2] in pixel coordinates on the original, unannotated image. "
+                    f"For each provided node, especially when producing the 'name' field, inspect the original image content inside that node's bbox first and use the original label only as a hint; correct imprecise labels when the boxed pixels indicate a better common name. "
                     f"When describing objects that you can clearly identify and match to the provided nodes, "
                     f"reference them using their node ID (e.g., '{'node_id'}'). "
                     f"Describe the spatial relationships, states, and interactions between these grounded objects and any other visible elements."

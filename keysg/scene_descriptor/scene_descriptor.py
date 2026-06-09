@@ -338,7 +338,10 @@ class SceneDescriptor:
                 )
                 continue
 
-            # Find visible nodes
+            # Find visible nodes. When an ObjNode has a 2D bbox for this frame,
+            # include bbox_2d in the node payload. Keep the image unmodified:
+            # drawing many boxes/labels can overlap and obscure the pixels the VLM
+            # needs to inspect for name refinement.
             nodes_in_frame = {}
             for node in room.objects:
                 if is_pcd_visible_in_frame(
@@ -348,19 +351,63 @@ class SceneDescriptor:
                     intrinsics,
                     camera_ctx["depth_scale"],
                 ):
-                    nodes_in_frame[node.id] = node.label
+                    bbox = self._get_node_bbox_for_frame(node, idx)
+                    node_payload: Dict[str, Any] = {"label": node.label}
+                    if bbox is not None:
+                        node_payload["bbox_2d"] = bbox
+                    nodes_in_frame[node.id] = node_payload
 
             frame_data.append(
                 {
                     "index": idx,
                     "path": rgb_path,
-                    "node_tags": list(nodes_in_frame.values()),
+                    "node_tags": [
+                        n.get("label", "") if isinstance(n, dict) else str(n)
+                        for n in nodes_in_frame.values()
+                    ],
                 }
             )
             images.append(Image.fromarray(rgb))
             visible_nodes.append(nodes_in_frame)
 
         return frame_data, images, visible_nodes
+
+    @staticmethod
+    def _get_node_bbox_for_frame(node: Any, frame_idx: int) -> Optional[List[int]]:
+        """Return the node's [x1, y1, x2, y2] bbox for a dataset frame if known.
+
+        ObjNode stores bboxs_2d aligned with frame_indices/rgb_frames. This helper
+        keeps the room description path robust when older serialized nodes lack
+        frame_indices or when boxes are stored as numpy arrays/tuples.
+        """
+        bboxs = getattr(node, "bboxs_2d", None) or []
+        if not bboxs:
+            return None
+
+        bbox_pos: Optional[int] = None
+        frame_indices = getattr(node, "frame_indices", None) or []
+        if frame_indices:
+            try:
+                bbox_pos = list(frame_indices).index(frame_idx)
+            except ValueError:
+                return None
+        elif len(bboxs) == 1:
+            # Backward-compatible fallback for nodes that only keep their best-view bbox.
+            bbox_pos = 0
+
+        if bbox_pos is None or bbox_pos >= len(bboxs):
+            return None
+
+        bbox = bboxs[bbox_pos]
+        if bbox is None:
+            return None
+        try:
+            x1, y1, x2, y2 = [int(round(float(v))) for v in list(bbox)[:4]]
+        except Exception:
+            return None
+        if x2 <= x1 or y2 <= y1:
+            return None
+        return [x1, y1, x2, y2]
 
     def _summarize_frames(self, descriptions: List[Dict[str, Any]]) -> str:
         """Summarize frame descriptions into room summary."""
