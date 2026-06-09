@@ -96,6 +96,7 @@ keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/da
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/c2_show
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/merged_from_gs_renders
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/merged_from_gs_mesh
+keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/merged_from_gs_mesh_qiyu/merged_from_gs_mesh
 
 
 # HM3DSem scene

@@ -77,6 +77,7 @@ class KeySGPipeline:
             "depth_scale": self.cfg.dataset.depth_scale,
             "depth_min": self.cfg.dataset.depth_min,
             "depth_max": self.cfg.dataset.depth_max,
+            "downsample_stride": self.cfg.dataset.downsample_stride,  # 添加这行
             "video_ids": ["video0"],
         }
         self.dataset = self._create_dataset(self.cfg.dataset.kind, ds_cfg)

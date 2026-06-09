@@ -81,7 +81,7 @@ class SceneSegmentor:
         skip_segmentation = getattr(self.dataset, "name", None) not in [
             "HMP3D",
             "AzureRGBD",
-            "Replica",
+            #"Replica",
         ]
 
         if skip_segmentation:

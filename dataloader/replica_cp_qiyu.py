@@ -2,7 +2,7 @@ import sys
 import os
 import json
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import cv2
@@ -185,14 +185,6 @@ class ReplicaDataset:
         logger.info(f"depth_scale={self.depth_scale}")
 
         self.data_list = self._get_data_list()
-        n_total = len(self.data_list)
-        self._downsample_stride = max(1, int(cfg.get("downsample_stride", 1)))
-        if self._downsample_stride > 1:
-            self.data_list = self.data_list[:: self._downsample_stride]
-            logger.info(
-                f"降采样: {n_total} → {len(self.data_list)} 帧 "
-                f"(downsample_stride={self._downsample_stride})"
-            )
         print(f"Loaded {len(self.data_list)} images from {self.root_dir}")
 
         sample_rgb, sample_dep, _, _ = self.data_list[0]
@@ -432,6 +424,7 @@ class ReplicaDataset:
                         if rp.is_file() and dp.is_file():
                             found = (str(rp), str(dp))
                             break
+
                 if found:
                     out.append((found[0], found[1], pose_path, fi))
                 else:
@@ -714,31 +707,18 @@ class ReplicaDataset:
 # Example usage:
 if __name__ == "__main__":
     cfg = {
-        "root_dir": "/home/ubt/workspace/vggt_ws/datasets/merged_from_gs_mesh_qiyu/merged_from_gs_mesh",
+        "root_dir": "/home/ubt/workspace/vggt_ws/test/merged_from_gs_mesh",
         "depth_scale": 1000.0,
         "depth_min": 0.05,
-        "depth_max": 80.0,
-        # 帧降采样：9072 帧 stride=20 → 约 454 帧参与可视化
-        "downsample_stride": 20,
-        # 点云体素降采样（米），0 表示关闭
-        "voxel_size": 0.03,
+        "depth_max": 4.0,
     }
     dataset = ReplicaDataset(cfg)
     print(f"Number of samples: {len(dataset)}")
 
     scene_pcd = o3d.geometry.PointCloud()
-    for i in range(len(dataset)):
+    for i in range(0, len(dataset), 5):
         rgb, depth, pose = dataset[i]
         rgb_path = dataset.data_list[i][0]
         pcd = dataset.create_pcd(rgb, depth, pose, rgb_path=rgb_path)
         scene_pcd += pcd
-
-    voxel = float(cfg.get("voxel_size", 0.0))
-    if voxel > 0 and len(scene_pcd.points) > 0:
-        n_before = len(scene_pcd.points)
-        scene_pcd = scene_pcd.voxel_down_sample(voxel)
-        print(
-            f"体素降采样: {n_before} → {len(scene_pcd.points)} 点 (voxel_size={voxel})"
-        )
-
     o3d.visualization.draw_geometries([scene_pcd], window_name="Replica Scene")
