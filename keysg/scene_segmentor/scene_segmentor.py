@@ -50,6 +50,7 @@ class SceneSegmentor:
         sampling_eps: float = 0.01,
         sampling_min_samples: int = 5,
         sampling_rot_weight: float = 1.5,
+        sampling_min_cluster_size: int = 3,
         points_in_room_threshold: float = 0.65,
         flip_zy: bool = False,
     ) -> None:
@@ -62,6 +63,7 @@ class SceneSegmentor:
         self.sampling_eps = sampling_eps
         self.sampling_min_samples = sampling_min_samples
         self.sampling_rot_weight = sampling_rot_weight
+        self.sampling_min_cluster_size = sampling_min_cluster_size
         self.points_in_room_threshold = points_in_room_threshold
         self.flip_zy = flip_zy
 
@@ -313,7 +315,7 @@ class SceneSegmentor:
                     self.dataset, selected_indices=room.indices
                 )
                 sampled = sampler.sample_hdbscan(
-                    min_cluster_size=3,
+                    min_cluster_size=self.sampling_min_cluster_size,
                 )
                 room.sparse_indices = sampled if sampled else list(room.indices)
                 logger.info(

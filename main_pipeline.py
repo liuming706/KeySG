@@ -191,6 +191,7 @@ class KeySGPipeline:
             sampling_eps=seg_cfg.sampling_eps,
             sampling_min_samples=seg_cfg.sampling_min_samples,
             sampling_rot_weight=seg_cfg.sampling_rot_weight,
+            sampling_min_cluster_size=seg_cfg.sampling_min_cluster_size,
             points_in_room_threshold=seg_cfg.points_in_room_threshold,
         )
         seg.run()

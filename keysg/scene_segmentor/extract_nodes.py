@@ -786,7 +786,11 @@ class NodesRepo:
             self._select_best_mask(node)
 
     def _select_best_mask(self, node: ObjNode) -> Optional[int]:
-        """Select the best mask for a node based on quality scores."""
+        """Select the best mask for a node based on quality scores.
+
+        The best mask is moved to the front of the list; all other masks are
+        preserved in their original order.
+        """
         if (
             not node.masks_2d
             or not node.rgb_frames
@@ -809,15 +813,18 @@ class NodesRepo:
                 if score > best_score:
                     best_score, best_idx = score, i
 
-        node.masks_2d = [node.masks_2d[best_idx]]
-        node.rgb_frames = [node.rgb_frames[best_idx]]
-        node.frame_indices = (
-            [node.frame_indices[best_idx]]
-            if node.frame_indices and len(node.frame_indices) > best_idx
-            else node.frame_indices
-        )
+        # Move the best mask to the front, preserving the order of other masks
+        def _reorder(lst: List, best: int) -> List:
+            if not lst or best >= len(lst):
+                return lst
+            return [lst[best]] + lst[:best] + lst[best + 1 :]
+
+        node.masks_2d = _reorder(node.masks_2d, best_idx)
+        node.rgb_frames = _reorder(node.rgb_frames, best_idx)
+        if node.frame_indices and len(node.frame_indices) > best_idx:
+            node.frame_indices = _reorder(node.frame_indices, best_idx)
         if node.bboxs_2d and len(node.bboxs_2d) > best_idx:
-            node.bboxs_2d = [node.bboxs_2d[best_idx]]
+            node.bboxs_2d = _reorder(node.bboxs_2d, best_idx)
 
         return best_idx
 

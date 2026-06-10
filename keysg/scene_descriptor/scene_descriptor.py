@@ -328,7 +328,11 @@ class SceneDescriptor:
         for idx in room.sparse_indices:
             rgb, depth, pose = self.dataset[idx]
             camera_ctx = get_frame_camera_context(self.dataset, idx, rgb)
-            rgb_path = camera_ctx.get("rgb_path") or get_frame_rgb_path(self.dataset, idx) or ""
+            rgb_path = (
+                camera_ctx.get("rgb_path")
+                or get_frame_rgb_path(self.dataset, idx)
+                or ""
+            )
             intrinsics = camera_ctx.get("intrinsics")
             if intrinsics is None:
                 logger.warning(
@@ -354,6 +358,12 @@ class SceneDescriptor:
                     bbox = self._get_node_bbox_for_frame(node, idx)
                     node_payload: Dict[str, Any] = {"label": node.label}
                     if bbox is not None:
+                        logger.info(
+                            "Node {} has bbox {} in frame {}",
+                            node.id,
+                            bbox,
+                            idx,
+                        )
                         node_payload["bbox_2d"] = bbox
                     nodes_in_frame[node.id] = node_payload
 
