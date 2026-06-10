@@ -1514,9 +1514,17 @@ class KeySGVisualizer:
                     self._draw_bbox(oid)
                     _pts = self._obj_pts[oid]
                     _center = (_pts.min(axis=0) + _pts.max(axis=0)) / 2
+                    # Get frame_indices for this object
+                    _obj = next(
+                        (o for o in self.objects if str(getattr(o, "id", "")) == oid),
+                        None,
+                    )
+                    _frame_indices = getattr(_obj, "frame_indices", None) if _obj else None
+                    _frame_indices_str = str(_frame_indices) if _frame_indices is not None else "N/A"
                     bbox_id_result.content = (
                         f"**Drawing bbox for:** {obj_label} (ID: `{oid}`)\n\n"
-                        f"**BBox Center:** x={_center[0]:.3f}, y={_center[1]:.3f}, z={_center[2]:.3f}"
+                        f"**BBox Center:** x={_center[0]:.3f}, y={_center[1]:.3f}, z={_center[2]:.3f}\n\n"
+                        f"**Frame Indices:** {_frame_indices_str}"
                     )
                 else:
                     bbox_id_result.content = f"_Object ID `{oid}` not found in scene._"
@@ -1564,14 +1572,24 @@ class KeySGVisualizer:
                         self._draw_bbox(str(obj_id))
                         _pts = self._obj_pts.get(str(obj_id))
                         _center_str = ""
+                        _frame_indices_str = ""
                         if _pts is not None and len(_pts) > 0:
                             _center = (_pts.min(axis=0) + _pts.max(axis=0)) / 2
                             _center_str = f"\n\n**BBox Center:** x={_center[0]:.3f}, y={_center[1]:.3f}, z={_center[2]:.3f}"
+                        # Get frame_indices for this object
+                        _grounded_obj = next(
+                            (o for o in self.objects if str(getattr(o, "id", "")) == str(obj_id)),
+                            None,
+                        )
+                        _frame_indices = getattr(_grounded_obj, "frame_indices", None) if _grounded_obj else None
+                        if _frame_indices is not None:
+                            _frame_indices_str = f"\n\n**Frame Indices:** {_frame_indices}"
                         grounding_result.content = (
                             f"**Found:** {obj_label} (ID: `{obj_id}`)\n\n"
                             f"**Confidence:** {confidence:.2f}\n\n"
                             f"**Reasoning:** {reason}"
                             f"{_center_str}"
+                            f"{_frame_indices_str}"
                         )
                         # Show keyframes where the object appeared
                         kf_list = result.get("keyframes", [])
