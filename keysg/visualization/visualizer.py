@@ -34,30 +34,58 @@ from keysg.utils.load_utils import get_floors, get_objects, get_rooms, load_scen
 
 
 def _palette(n: int) -> np.ndarray:
-    """Generate n perceptually distinct RGB colors (values in [0, 255])."""
+    """Generate n perceptually distinct RGB colors (values in [0, 255]).
+
+    Uses matplotlib's tab20 (20 colors) and tab20b (20 colors) colormaps,
+    providing 40 guaranteed-distinct colors.  For n > 40, generates additional
+    colors using golden-ratio hue spacing with varied saturation levels,
+    creating genuinely new color types (not just brightness variations).
+    """
     if n == 0:
         return np.empty((0, 3), dtype=np.uint8)
+    import matplotlib.pyplot as plt
+    import colorsys
+
+    # tab20: 20 highly distinct colors; tab20b: another 20 distinct colors
+    tab20 = plt.cm.tab20(np.linspace(0, 1, 20))[:, :3]  # (20, 3) float [0,1]
+    tab20b = plt.cm.tab20b(np.linspace(0, 1, 20))[:, :3]  # (20, 3) float [0,1]
+    base_colors = np.concatenate([tab20, tab20b], axis=0)  # (40, 3) float [0,1]
+    base_uint8 = (base_colors * 255).astype(np.uint8)
+
+    if n <= 40:
+        return base_uint8[:n]
+
+    # For n > 40: generate new colors via golden-ratio hue + varied saturation
+    # Each "cycle" uses a different saturation/value profile, producing
+    # genuinely different color families (vivid → pastel → muted → deep …)
     golden = 0.618033988749895
-    hues = (np.arange(n) * golden) % 1.0
-    colors = []
-    for h in hues:
-        c = 0.72  # chroma
-        x = c * (1 - abs((h * 6) % 2 - 1))
-        m = 0.9 - c
-        if h < 1 / 6:
-            rgb = (c, x, 0)
-        elif h < 2 / 6:
-            rgb = (x, c, 0)
-        elif h < 3 / 6:
-            rgb = (0, c, x)
-        elif h < 4 / 6:
-            rgb = (0, x, c)
-        elif h < 5 / 6:
-            rgb = (x, 0, c)
-        else:
-            rgb = (c, 0, x)
-        colors.append([(v + m) * 255 for v in rgb])
-    return np.array(colors, dtype=np.uint8)
+    # Saturation/value profiles for each cycle (all in [0,1])
+    _SV_PROFILES = [
+        (0.85, 0.90),  # vivid
+        (0.50, 0.95),  # pastel
+        (0.65, 0.70),  # muted
+        (0.90, 0.55),  # deep
+        (0.40, 0.80),  # soft
+        (0.75, 0.65),  # dusty
+        (0.55, 0.50),  # dark-muted
+        (0.30, 0.90),  # light-pastel
+    ]
+
+    result = np.empty((n, 3), dtype=np.uint8)
+    # First 40: predefined palette
+    result[:40] = base_uint8
+
+    for i in range(40, n):
+        cycle = (i - 40) // 40
+        idx_in_cycle = (i - 40) % 40
+        sv = _SV_PROFILES[cycle % len(_SV_PROFILES)]
+        s, v = sv
+        # Golden-ratio hue spacing — offset by cycle to avoid hue overlap
+        h = ((idx_in_cycle + cycle * 7) * golden) % 1.0
+        r, g, b = colorsys.hsv_to_rgb(h, s, v)
+        result[i] = np.array([r * 255, g * 255, b * 255], dtype=np.uint8)
+
+    return result
 
 
 def _pose_to_wxyz_pos(pose: np.ndarray):
