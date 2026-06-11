@@ -92,6 +92,7 @@ keysg-build dataset.kind=replica dataset.root_dir=/data/Replica/room0
 keysg-build dataset.kind=replica dataset.root_dir=data/Replica_RGBD/Replica/room0
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/3dgs_pred
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/Replica_webots/webots
+keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/sg_data/Replica_webots/webots
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/Replica_unova/unova
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/c2_show
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/merged_from_gs_renders
@@ -130,6 +131,7 @@ keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh --model deep
 keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh --model gpt-5.5 --roof-margin 0.5
 keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh --model Qwen/Qwen3-VL-8B-Instruct  --hide-roofs --roof-margin 2.0
 keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh --model qwen3.7-plus  --hide-roofs --roof-margin 2.0 --qa-method chat
+keysg-vis --scene_dir output/keysg_rag1/Replica/webots --model qwen3.7-plus  --hide-roofs --roof-margin 2.0 --qa-method chat
 
 
 # Open http://localhost:8080
