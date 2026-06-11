@@ -910,7 +910,7 @@ class KeySGVisualizer:
             self._obj_handles,
             self._frustum_handles,
         ):
-            for h in handles.values():
+            for h in list(handles.values()):
                 try:
                     h.remove()
                 except Exception:
