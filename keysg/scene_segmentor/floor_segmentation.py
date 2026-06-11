@@ -43,6 +43,7 @@ class FloorSegmentation:
         self,
         output_path: Optional[str] = None,
         flip_zy: bool = False,
+        up_idx: int = 1,
         resolution: float = 0.01,
         peak_distance: float = 0.2,
         peak_percentile: float = 90,
@@ -52,7 +53,8 @@ class FloorSegmentation:
 
         Args:
             output_path: Path to save intermediate visualizations
-            flip_zy: Whether to swap Z and Y axes
+            flip_zy: Deprecated. Use up_idx instead. If True, treated as up_idx=2.
+            up_idx: Axis index representing the vertical direction (1 for Y-up, 2 for Z-up)
             resolution: Histogram bin size in meters
             peak_distance: Minimum distance between peaks in meters
             peak_percentile: Percentile threshold for peak detection
@@ -62,19 +64,21 @@ class FloorSegmentation:
         """
         logger.info("Starting floor segmentation...")
 
+        if flip_zy and up_idx == 1:
+            logger.warning("flip_zy is deprecated; use up_idx=2 instead. Treating flip_zy=True as up_idx=2.")
+            up_idx = 2
+
+        horiz_idx = [i for i in range(3) if i != up_idx]
+
         # Downsample and prepare points
         downpcd = self.full_pcd.voxel_down_sample(voxel_size=0.05)
-        if flip_zy:
-            pts = np.asarray(downpcd.points)
-            downpcd.points = o3d.utility.Vector3dVector(pts[:, [0, 2, 1]])
-
         points = np.asarray(downpcd.points)
         logger.info(f"Processing {len(points)} points")
 
         # Create height histogram
-        y_range = np.max(points[:, 1]) - np.min(points[:, 1])
-        bins = max(int(y_range / resolution), 1)
-        hist_counts, hist_edges = np.histogram(points[:, 1], bins=bins)
+        up_range = np.max(points[:, up_idx]) - np.min(points[:, up_idx])
+        bins = max(int(up_range / resolution), 1)
+        hist_counts, hist_edges = np.histogram(points[:, up_idx], bins=bins)
         hist_smooth = gaussian_filter1d(hist_counts, sigma=2)
 
         # Find peaks
@@ -88,12 +92,12 @@ class FloorSegmentation:
 
         # Cluster peaks and create floors
         if len(peaks) > 0:
-            boundaries = self._cluster_peaks_to_boundaries(peaks, hist_edges, hist_smooth, points)
+            boundaries = self._cluster_peaks_to_boundaries(peaks, hist_edges, hist_smooth, points, up_idx)
         else:
             logger.warning("No peaks found - creating single floor")
-            boundaries = [[np.min(points[:, 1]), np.max(points[:, 1])]]
+            boundaries = [[np.min(points[:, up_idx]), np.max(points[:, up_idx])]]
 
-        self.floors = self._create_floors(boundaries)
+        self.floors = self._create_floors(boundaries, up_idx, horiz_idx)
         logger.info(f"Created {len(self.floors)} floors")
         return self.floors
 
@@ -103,6 +107,7 @@ class FloorSegmentation:
         hist_edges: np.ndarray,
         hist_smooth: np.ndarray,
         points: np.ndarray,
+        up_idx: int = 1,
     ) -> List[List[float]]:
         """Cluster peaks and derive floor boundaries."""
         peak_heights = hist_edges[peaks]
@@ -131,21 +136,32 @@ class FloorSegmentation:
 
         # Extend boundaries to cover full range
         if boundaries:
-            boundaries[0][0] = (boundaries[0][0] + np.min(points[:, 1])) / 2
-            boundaries[-1][1] = (boundaries[-1][1] + np.max(points[:, 1])) / 2
+            boundaries[0][0] = (boundaries[0][0] + np.min(points[:, up_idx])) / 2
+            boundaries[-1][1] = (boundaries[-1][1] + np.max(points[:, up_idx])) / 2
 
         return boundaries
 
-    def _create_floors(self, boundaries: List[List[float]]) -> List[Floor]:
+    def _create_floors(self, boundaries: List[List[float]], up_idx: int = 1, horiz_idx: List[int] = None) -> List[Floor]:
         """Create Floor objects from boundaries."""
+        if horiz_idx is None:
+            horiz_idx = [0, 2] if up_idx == 1 else [0, 1]
+
         floors = []
-        for i, (y_min, y_max) in enumerate(boundaries):
+        for i, (up_min, up_max) in enumerate(boundaries):
             floor = Floor(str(i), name=f"floor_{i}")
 
-            # Crop point cloud to floor bounds
+            # Build AABB: unconstrained on horizontal axes, bounded on vertical axis
+            min_bound = [np.inf, np.inf, np.inf]
+            max_bound = [-np.inf, -np.inf, -np.inf]
+            for ax in horiz_idx:
+                min_bound[ax] = -np.inf
+                max_bound[ax] = np.inf
+            min_bound[up_idx] = up_min
+            max_bound[up_idx] = up_max
+
             bbox = o3d.geometry.AxisAlignedBoundingBox(
-                min_bound=(-np.inf, y_min, -np.inf),
-                max_bound=(np.inf, y_max, np.inf),
+                min_bound=min_bound,
+                max_bound=max_bound,
             )
             floor_pcd = self.full_pcd.crop(bbox)
 
@@ -153,8 +169,8 @@ class FloorSegmentation:
                 floor.pcd = floor_pcd
                 floor.vertices = np.asarray(floor_pcd.get_axis_aligned_bounding_box().get_box_points())
                 pts = np.asarray(floor_pcd.points)
-                floor.floor_zero_level = float(np.min(pts[:, 1]))
-                floor.floor_height = y_max - floor.floor_zero_level
+                floor.floor_zero_level = float(np.min(pts[:, up_idx]))
+                floor.floor_height = up_max - floor.floor_zero_level
                 floors.append(floor)
                 logger.info(f"Floor {i}: height={floor.floor_height:.2f}m, points={len(floor_pcd.points)}")
 

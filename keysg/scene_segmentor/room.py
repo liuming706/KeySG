@@ -24,10 +24,10 @@ class Room:
         floor_id: ID of the parent floor
         name: Human-readable name
         objects: List of detected objects in this room
-        polygon: 2D footprint polygon (XZ plane)
+        polygon: 2D footprint polygon (horizontal plane)
         pcd: 3D point cloud of the room
         height: Room height in meters
-        zero_level: Y-coordinate of the room floor
+        zero_level: Vertical-coordinate of the room floor (Y if up_axis='y', Z if up_axis='z')
         indices: Dataset frame indices assigned to this room
         sparse_indices: Representative frame indices (keyframes)
     """

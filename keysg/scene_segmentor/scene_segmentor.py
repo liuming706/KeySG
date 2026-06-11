@@ -53,6 +53,7 @@ class SceneSegmentor:
         sampling_min_cluster_size: int = 3,
         points_in_room_threshold: float = 0.65,
         flip_zy: bool = False,
+        up_axis: str = "y",
     ) -> None:
         self.dataset = dataset
         self.output_dir = output_dir
@@ -65,7 +66,18 @@ class SceneSegmentor:
         self.sampling_rot_weight = sampling_rot_weight
         self.sampling_min_cluster_size = sampling_min_cluster_size
         self.points_in_room_threshold = points_in_room_threshold
+
+        if flip_zy and up_axis == "y":
+            logger.warning("flip_zy is deprecated; use up_axis='z' instead. Treating flip_zy=True as up_axis='z'.")
+            up_axis = "z"
         self.flip_zy = flip_zy
+
+        up_axis = up_axis.lower()
+        if up_axis not in ("y", "z"):
+            raise ValueError(f"up_axis must be 'y' or 'z', got '{up_axis}'")
+        self.up_axis = up_axis
+        self._up_idx = 1 if up_axis == "y" else 2
+        self._horiz_idx = [0, 2] if up_axis == "y" else [0, 1]
 
         os.makedirs(self.output_dir, exist_ok=True)
 
@@ -213,14 +225,18 @@ class SceneSegmentor:
         """Segment point cloud into floors."""
         logger.info("Segmenting floors...")
         seg = FloorSegmentation(pcd, save_intermediate=self.save_intermediate)
-        floors = seg.segment_floors(output_path=self.output_dir, flip_zy=self.flip_zy)
+        floors = seg.segment_floors(output_path=self.output_dir, up_idx=self._up_idx)
         logger.info(f"Found {len(floors)} floors")
         return floors
 
     def _segment_rooms(self, floors: List[Floor]) -> List[Tuple[Floor, List[Room]]]:
         """Segment each floor into rooms."""
         logger.info("Segmenting rooms...")
-        room_seg = RoomSegmentation(save_intermediate=self.save_intermediate)
+        room_seg = RoomSegmentation(
+            save_intermediate=self.save_intermediate,
+            up_idx=self._up_idx,
+            horiz_idx=self._horiz_idx,
+        )
         floor_rooms = []
 
         for floor in floors:
@@ -247,8 +263,8 @@ class SceneSegmentor:
             floor.vertices = np.asarray(
                 pcd.get_axis_aligned_bounding_box().get_box_points()
             )
-            floor.floor_zero_level = float(np.nanmin(pts[:, 1]))
-            floor.floor_height = float(np.nanmax(pts[:, 1]) - floor.floor_zero_level)
+            floor.floor_zero_level = float(np.nanmin(pts[:, self._up_idx]))
+            floor.floor_height = float(np.nanmax(pts[:, self._up_idx]) - floor.floor_zero_level)
 
         room = Room("0_0", floor.floor_id, "room_0")
         room.pcd = pcd
@@ -276,10 +292,11 @@ class SceneSegmentor:
         # Assign each pose to a room
         for idx, pose in tqdm(enumerate(poses), total=len(poses), desc="Assigning"):
             x, y, z = pose[0, 3], pose[1, 3], pose[2, 3]
+            up_val = pose[self._up_idx, 3]
 
             for floor, rooms in floor_rooms:
-                y_min, y_max = floor_bounds[floor.floor_id]
-                if not (y_min - 0.5 <= y <= y_max + 0.5):
+                up_min, up_max = floor_bounds[floor.floor_id]
+                if not (up_min - 0.5 <= up_val <= up_max + 0.5):
                     continue
 
                 # Fast path: single room per floor
@@ -287,11 +304,12 @@ class SceneSegmentor:
                     rooms[0].indices.append(idx)
                     break
 
-                # Check room containment
+                # Check room containment (use horizontal axes)
                 for room in rooms:
                     if room.polygon is None:
                         continue
-                    if room.polygon.contains(Point(x, z)):
+                    horiz_vals = (pose[self._horiz_idx[0], 3], pose[self._horiz_idx[1], 3])
+                    if room.polygon.contains(Point(*horiz_vals)):
                         if self._validate_pose_in_room(idx, room):
                             room.indices.append(idx)
                             break
@@ -340,8 +358,8 @@ class SceneSegmentor:
                 )
             else:
                 pts = np.asarray(floor.pcd.points)
-                y_min, y_max = np.nanmin(pts[:, 1]), np.nanmax(pts[:, 1])
-                bounds[floor.floor_id] = (y_min, y_max)
+                up_min, up_max = np.nanmin(pts[:, self._up_idx]), np.nanmax(pts[:, self._up_idx])
+                bounds[floor.floor_id] = (up_min, up_max)
         return bounds
 
     def _validate_pose_in_room(
@@ -363,7 +381,7 @@ class SceneSegmentor:
         if len(pts) == 0:
             return False
 
-        pts_2d = pts[:, [0, 2]]
+        pts_2d = pts[:, self._horiz_idx]
 
         try:
             point_geoms = shp_points(pts_2d)

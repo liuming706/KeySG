@@ -29,7 +29,7 @@ class Floor:
         pcd: Point cloud of the floor
         vertices: Bounding box vertices (8 points)
         floor_height: Height of the floor in meters
-        floor_zero_level: Y-coordinate of the floor base
+        floor_zero_level: Vertical-coordinate of the floor base (Y if up_axis='y', Z if up_axis='z')
     """
 
     def __init__(self, floor_id: str, name: Optional[str] = None):

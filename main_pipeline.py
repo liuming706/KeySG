@@ -193,6 +193,7 @@ class KeySGPipeline:
             sampling_rot_weight=seg_cfg.sampling_rot_weight,
             sampling_min_cluster_size=seg_cfg.sampling_min_cluster_size,
             points_in_room_threshold=seg_cfg.points_in_room_threshold,
+            up_axis=getattr(seg_cfg, "up_axis", "y"),
         )
         seg.run()
         logger.info("Segmentation saved to {}", seg.save())

@@ -42,6 +42,7 @@ segmentation:
   sampling_rot_weight: 1.5 # Weight for rotation in pose sampling distance [Keyframe sampling]
   sampling_min_cluster_size: 10 # HDBSCAN minimum cluster size for keyframe sampling
   points_in_room_threshold: 0.65 # Minimum fraction of points to assign frame to room
+  up_axis: z # Which axis is vertical: 'y' (Y-up) or 'z' (Z-up)
 
 # Object node extraction and merging parameters
 nodes:

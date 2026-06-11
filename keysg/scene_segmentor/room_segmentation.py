@@ -44,8 +44,10 @@ class RoomSegmentation:
     BORDER_SIZE: int = 10
     MIN_ROOM_AREA_M2: float = 0.5
 
-    def __init__(self, save_intermediate: bool = False):
+    def __init__(self, save_intermediate: bool = False, up_idx: int = 1, horiz_idx: Optional[List[int]] = None):
         self.save_intermediate = save_intermediate
+        self.up_idx = up_idx
+        self.horiz_idx = horiz_idx if horiz_idx is not None else ([0, 2] if up_idx == 1 else [0, 1])
         self.rooms: List[Room] = []
 
     def segment_rooms_from_floor(
@@ -79,22 +81,22 @@ class RoomSegmentation:
 
         # Extract floor properties
         xyz = np.asarray(floor.pcd.points)
-        y_base = floor.floor_zero_level
-        y_height = floor.floor_height
+        up_base = floor.floor_zero_level
+        up_height = floor.floor_height
 
         # Slice point cloud for wall detection
-        wall_pts = self._slice_points(xyz, y_base + self.WALL_SLICE_LOWER,
-                                      y_base + y_height - self.WALL_SLICE_UPPER_MARGIN)
+        wall_pts = self._slice_points(xyz, up_base + self.WALL_SLICE_LOWER,
+                                       up_base + up_height - self.WALL_SLICE_UPPER_MARGIN)
         full_pts = self._slice_points(xyz, None,
-                                      y_base + y_height - self.FULL_SLICE_UPPER_MARGIN)
+                                       up_base + up_height - self.FULL_SLICE_UPPER_MARGIN)
 
         if len(wall_pts) == 0:
             logger.warning("No wall points after slicing")
             return []
 
-        # Project to 2D (XZ plane)
-        wall_2d = wall_pts[:, [0, 2]]
-        full_2d = full_pts[:, [0, 2]]
+        # Project to 2D (horizontal plane)
+        wall_2d = wall_pts[:, self.horiz_idx]
+        full_2d = full_pts[:, self.horiz_idx]
 
         # Detect room regions
         room_data = self._detect_rooms(wall_2d, full_2d, grid_resolution, floor_output)
@@ -104,22 +106,22 @@ class RoomSegmentation:
             return []
 
         # Create Room objects
-        self.rooms = self._create_rooms(room_data, floor, y_base, y_height)
+        self.rooms = self._create_rooms(room_data, floor, up_base, up_height)
         logger.info(f"Created {len(self.rooms)} rooms")
         return self.rooms
 
     def _slice_points(
         self,
         xyz: np.ndarray,
-        y_min: Optional[float],
-        y_max: Optional[float],
+        up_min: Optional[float],
+        up_max: Optional[float],
     ) -> np.ndarray:
-        """Filter points by Y range."""
+        """Filter points by vertical axis range."""
         mask = np.ones(len(xyz), dtype=bool)
-        if y_min is not None:
-            mask &= xyz[:, 1] >= y_min
-        if y_max is not None:
-            mask &= xyz[:, 1] < y_max
+        if up_min is not None:
+            mask &= xyz[:, self.up_idx] >= up_min
+        if up_max is not None:
+            mask &= xyz[:, self.up_idx] < up_max
         return xyz[mask]
 
     def _detect_rooms(
@@ -276,19 +278,19 @@ class RoomSegmentation:
         self,
         room_data: List[Dict[str, Any]],
         floor: Floor,
-        y_base: float,
-        y_height: float,
+        up_base: float,
+        up_height: float,
     ) -> List[Room]:
         """Create Room objects from detected regions."""
         rooms = []
         for i, data in enumerate(room_data):
             room = Room(f"{floor.floor_id}_{i}", floor.floor_id, f"room_{i}")
             room.polygon = data["polygon"]
-            room.height = y_height
-            room.zero_level = y_base
+            room.height = up_height
+            room.zero_level = up_base
 
             # Extract 3D points within room polygon
-            room.pcd = self._extract_room_points(floor, data["polygon"], y_base, y_height)
+            room.pcd = self._extract_room_points(floor, data["polygon"], up_base, up_height)
 
             if room.pcd is not None and len(room.pcd.points) > 0:
                 floor.add_room(room)
@@ -300,8 +302,8 @@ class RoomSegmentation:
         self,
         floor: Floor,
         polygon: Polygon,
-        y_base: float,
-        y_height: float,
+        up_base: float,
+        up_height: float,
     ) -> Optional[o3d.geometry.PointCloud]:
         """Extract points within room polygon from floor point cloud."""
         if floor.pcd is None:
@@ -312,19 +314,19 @@ class RoomSegmentation:
 
         # Filter by height
         eps = 0.1
-        mask = (xyz[:, 1] >= y_base - eps) & (xyz[:, 1] <= y_base + y_height + eps)
+        mask = (xyz[:, self.up_idx] >= up_base - eps) & (xyz[:, self.up_idx] <= up_base + up_height + eps)
         xyz_h = xyz[mask]
         colors_h = colors[mask]
 
         if len(xyz_h) == 0:
             return None
 
-        # Filter by polygon containment
-        xz = xyz_h[:, [0, 2]]
+        # Filter by polygon containment (horizontal plane)
+        horiz = xyz_h[:, self.horiz_idx]
         try:
             poly_pts = np.array(polygon.exterior.coords)
             path = MplPath(poly_pts)
-            inside = path.contains_points(xz, radius=0.1)
+            inside = path.contains_points(horiz, radius=0.1)
         except Exception:
             return None
 
