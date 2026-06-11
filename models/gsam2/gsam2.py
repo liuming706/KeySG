@@ -400,7 +400,7 @@ class GroundingSAM2:
             for det_idx, class_name in enumerate(label_names):
                 stripped_name = class_name.strip()
                 if not stripped_name:
-                    logger.warning(
+                    logger.debug(
                         "LLMDet returned an empty text label: det_idx={}, raw_text_labels={}, prompt_tags={}",
                         det_idx,
                         raw_text_labels,
@@ -417,7 +417,7 @@ class GroundingSAM2:
                     )
                 )
                 if matched_id is None:
-                    logger.warning(
+                    logger.debug(
                         "LLMDet text label could not be matched to any prompt tag: det_idx={}, text_label={!r}, best_reason={}, best_score={:.3f}, prompt_tags={}",
                         det_idx,
                         stripped_name,

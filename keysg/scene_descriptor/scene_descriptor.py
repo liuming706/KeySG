@@ -358,7 +358,7 @@ class SceneDescriptor:
                     bbox = self._get_node_bbox_for_frame(node, idx)
                     node_payload: Dict[str, Any] = {"label": node.label}
                     if bbox is not None:
-                        logger.info(
+                        logger.debug(
                             "Node {} has bbox {} in frame {}",
                             node.id,
                             bbox,
