@@ -222,7 +222,7 @@ def _load_frame_images(frame_chunks: List, max_images: int = 4) -> List:
     return images
 
 
-def _build_spatial_relations(target_vis, anchor_vis, obj_by_id) -> List[str]:
+def _build_spatial_relations(target_vis, anchor_vis, obj_by_id, up_idx=1, horiz_idx=None):
     """Build rich directional spatial relation strings between target and anchor objects.
 
     Computes:
@@ -231,6 +231,17 @@ def _build_spatial_relations(target_vis, anchor_vis, obj_by_id) -> List[str]:
       - Support relation detection ('on top of')
       - Horizontal distance
     """
+    if horiz_idx is None:
+        horiz_idx = [0, 2] if up_idx == 1 else [0, 1]
+
+    AXIS_LABELS_Y_UP = {0: "to the right of", 1: "above", 2: "in front of"}
+    AXIS_LABELS_Z_UP = {0: "to the right of", 2: "above", 1: "in front of"}
+    AXIS_NEG_LABELS_Y_UP = {0: "to the left of", 1: "below", 2: "behind"}
+    AXIS_NEG_LABELS_Z_UP = {0: "to the left of", 2: "below", 1: "behind"}
+
+    pos_labels = AXIS_LABELS_Y_UP if up_idx == 1 else AXIS_LABELS_Z_UP
+    neg_labels = AXIS_NEG_LABELS_Y_UP if up_idx == 1 else AXIS_NEG_LABELS_Z_UP
+
     lines = []
     for tr in target_vis[:3]:
         t_obj = obj_by_id.get(tr.chunk.id)
@@ -255,24 +266,21 @@ def _build_spatial_relations(target_vis, anchor_vis, obj_by_id) -> List[str]:
 
             delta = t_center - a_center
             dist = float(np.linalg.norm(delta))
-            horiz_dist = float(np.linalg.norm(delta[[0, 2]]))
+            horiz_dist = float(np.linalg.norm(delta[horiz_idx]))
 
-            # Directional predicates (world-frame: X=right, Y=up, Z=forward)
+            # Directional predicates (world-frame based on up_axis)
             directions = []
-            if abs(delta[0]) > 0.2:
-                directions.append(
-                    "to the right of" if delta[0] > 0 else "to the left of"
-                )
-            if abs(delta[1]) > 0.2:
-                directions.append("above" if delta[1] > 0 else "below")
-            if abs(delta[2]) > 0.2:
-                directions.append("in front of" if delta[2] > 0 else "behind")
+            for ax in range(3):
+                if abs(delta[ax]) > 0.2:
+                    directions.append(
+                        pos_labels[ax] if delta[ax] > 0 else neg_labels[ax]
+                    )
 
             # Support / contact detection via vertical gap analysis
-            t_extent_y = float(t_max[1] - t_min[1])
-            a_extent_y = float(a_max[1] - a_min[1])
-            vertical_gap = abs(delta[1])
-            if vertical_gap < (t_extent_y + a_extent_y) * 0.3 and delta[1] > 0:
+            t_extent_up = float(t_max[up_idx] - t_min[up_idx])
+            a_extent_up = float(a_max[up_idx] - a_min[up_idx])
+            vertical_gap = abs(delta[up_idx])
+            if vertical_gap < (t_extent_up + a_extent_up) * 0.3 and delta[up_idx] > 0:
                 directions.append("on top of")
 
             dir_str = ", ".join(directions) if directions else "near"
@@ -281,7 +289,7 @@ def _build_spatial_relations(target_vis, anchor_vis, obj_by_id) -> List[str]:
                 f"ID={tr.chunk.id} ({getattr(t_obj, 'label', '?')}) "
                 f"is {dist:.2f}m ({dir_str}) "
                 f"ID={ar.chunk.id} ({getattr(a_obj, 'label', '?')}) "
-                f"[horiz={horiz_dist:.2f}m, vert={delta[1]:.2f}m]"
+                f"[horiz={horiz_dist:.2f}m, vert={delta[up_idx]:.2f}m]"
             )
     return lines
 
@@ -297,6 +305,8 @@ def _run_grounding_query(
     model_analysis: str = "gpt-5.4",
     model_selection: str = "gpt-5.4-mini",
     qa_method: str = "chat",
+    up_idx: int = 1,
+    horiz_idx: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
     """RAG retrieval + LLM object selection — mirrors nr3d_eval._run_keysg_rag pipeline."""
     from pydantic import BaseModel, Field
@@ -418,7 +428,7 @@ def _run_grounding_query(
 
         if target_vis and anchor_vis and relation_polarity and objects:
             obj_by_id = {str(o.id): o for o in objects}
-            spatial_lines = _build_spatial_relations(target_vis, anchor_vis, obj_by_id)
+            spatial_lines = _build_spatial_relations(target_vis, anchor_vis, obj_by_id, up_idx=up_idx, horiz_idx=horiz_idx)
             if spatial_lines:
                 sections.append(
                     "Spatial Relations (target <-> anchor):\n"
@@ -656,6 +666,8 @@ def _run_open_qa(
     model_analysis: str = "gpt-5.4",
     model_answer: str = "gpt-5.4",
     qa_method: str = "chat",
+    up_idx: int = 1,
+    horiz_idx: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
     """RAG retrieval + LLM for open-ended scene questions — same context pipeline as grounding."""
     from pydantic import BaseModel, Field
@@ -750,7 +762,7 @@ def _run_open_qa(
 
     if target_vis and anchor_vis and relation_polarity and objects:
         obj_by_id = {str(o.id): o for o in objects}
-        spatial_lines = _build_spatial_relations(target_vis, anchor_vis, obj_by_id)
+        spatial_lines = _build_spatial_relations(target_vis, anchor_vis, obj_by_id, up_idx=up_idx, horiz_idx=horiz_idx)
         if spatial_lines:
             sections.append("Spatial Relations:\n" + "\n".join(spatial_lines))
 
@@ -793,6 +805,7 @@ class KeySGVisualizer:
         show_roofs: bool = True,
         roof_margin: float = 0.12,
         qa_method: str = "chat",
+        up_axis: str = "y",
     ):
         self.scene_dir = scene_dir
         self.port = port
@@ -800,6 +813,13 @@ class KeySGVisualizer:
         self.roof_margin = roof_margin
         self.qa_method = qa_method
         self.server: Optional[viser.ViserServer] = None
+
+        up_axis = up_axis.lower()
+        if up_axis not in ("y", "z"):
+            raise ValueError(f"up_axis must be 'y' or 'z', got '{up_axis}'")
+        self.up_axis = up_axis
+        self._up_idx = 1 if up_axis == "y" else 2
+        self._horiz_idx = [0, 2] if up_axis == "y" else [0, 1]
 
         # Scene data
         self.floors: Dict = {}
@@ -873,6 +893,12 @@ class KeySGVisualizer:
             pts[:, 2] *= -1
         return pts
 
+    @property
+    def _up_direction(self) -> np.ndarray:
+        up = np.zeros(3, dtype=np.float32)
+        up[self._up_idx] = 1.0
+        return up
+
     def _filter_roof_points(
         self,
         pts: np.ndarray,
@@ -892,8 +918,8 @@ class KeySGVisualizer:
         if zero_level is None or height is None:
             return pts, colors
 
-        ceiling_y = float(zero_level) + float(height)
-        keep = pts[:, 1] < (ceiling_y - self.roof_margin)
+        ceiling_up = float(zero_level) + float(height)
+        keep = pts[:, self._up_idx] < (ceiling_up - self.roof_margin)
         if not np.any(keep):
             logger.debug(
                 "Roof filtering would remove all points; keeping original point cloud."
@@ -959,7 +985,7 @@ class KeySGVisualizer:
             label_handle = self.server.scene.add_label(
                 f"/floors/{fid}/label",
                 text=f"Floor {fid}",
-                position=centroid + np.array([0, 0, 0.5], dtype=np.float32),
+                position=centroid + self._up_direction * 0.5,
             )
             label_handle.visible = self._show_floors
             self._floor_label_handles[fid] = label_handle
@@ -1244,7 +1270,7 @@ class KeySGVisualizer:
             for attr, value in (
                 ("look_at", center),
                 ("position", position),
-                ("up_direction", np.array([0.0, 1.0, 0.0], dtype=np.float32)),
+                ("up_direction", self._up_direction),
             ):
                 try:
                     setattr(cam, attr, value)
@@ -1408,6 +1434,11 @@ class KeySGVisualizer:
             chk_objects = self.server.gui.add_checkbox("Objects", initial_value=True)
             chk_kf = self.server.gui.add_checkbox("Keyframes", initial_value=True)
             chk_flip_z = self.server.gui.add_checkbox("Flip Z", initial_value=False)
+            up_axis_dd = self.server.gui.add_dropdown(
+                "Up Axis",
+                options=["Y", "Z"],
+                initial_value="Y" if self.up_axis == "y" else "Z",
+            )
 
             @chk_floors.on_update
             def _(_):
@@ -1449,6 +1480,13 @@ class KeySGVisualizer:
             @chk_flip_z.on_update
             def _(_):
                 self._flip_z = chk_flip_z.value
+                self._rebuild_scene()
+
+            @up_axis_dd.on_update
+            def _(_):
+                self.up_axis = up_axis_dd.value.lower()
+                self._up_idx = 1 if self.up_axis == "y" else 2
+                self._horiz_idx = [0, 2] if self.up_axis == "y" else [0, 1]
                 self._rebuild_scene()
 
         # -- Point cloud color mode --
@@ -1588,6 +1626,8 @@ class KeySGVisualizer:
                         model_analysis=self.model,
                         model_selection=self.model,
                         qa_method=self.qa_method,
+                        up_idx=self._up_idx,
+                        horiz_idx=self._horiz_idx,
                     )
                     obj_id = result.get("object_id")
                     confidence = result.get("confidence", 0.0)
@@ -1676,6 +1716,8 @@ class KeySGVisualizer:
                         model_analysis=self.model,
                         model_answer=self.model,
                         qa_method=self.qa_method,
+                        up_idx=self._up_idx,
+                        horiz_idx=self._horiz_idx,
                     )
                     answer = response.get("answer", "")
                     reasoning = response.get("reasoning", "")
