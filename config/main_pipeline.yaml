@@ -57,7 +57,7 @@ nodes:
   post_hoc_iou_thresh: 0.05 # IoU threshold for post-processing merging
   post_hoc_sim_thresh: 0.65 # Similarity threshold for post-processing merging
   similarity_threshold: 0.5 # Geometric similarity threshold for node merging
-  radius: 0.02 # Spatial radius for node merging (meters)
+  radius: 0.1 # Spatial radius for node merging (meters)
   visualize: true # Enable/disable 3D visualization
   save_visualizations: true # Save visualization files (.ply format)
   # GroundingSAM2 configuration passed to NodesRepo

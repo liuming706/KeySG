@@ -966,7 +966,7 @@ class KeySGVisualizer:
             self._room_handles[rid] = handle
 
     def _add_objects(self, color_mode: Optional[str] = None) -> None:
-        _EXCLUDE = {"wall", "floor", "ceiling"}
+        _EXCLUDE = {"wall", "floor", "ceiling", "light"}
         palette = _palette(max(len(self.objects), 1))
         mode = color_mode if color_mode is not None else self._color_mode
 
@@ -1464,7 +1464,7 @@ class KeySGVisualizer:
         # -- Manual bbox by object ID --
         with self.server.gui.add_folder("Draw BBox by ID"):
             # Build sorted list of available object IDs with labels
-            _EXCLUDE = {"wall", "floor", "ceiling"}
+            _EXCLUDE = {"wall", "floor", "ceiling", "light"}
             _available_ids = []
             for obj in self.objects:
                 label = (getattr(obj, "label", "") or "").lower()
@@ -1519,8 +1519,12 @@ class KeySGVisualizer:
                         (o for o in self.objects if str(getattr(o, "id", "")) == oid),
                         None,
                     )
-                    _frame_indices = getattr(_obj, "frame_indices", None) if _obj else None
-                    _frame_indices_str = str(_frame_indices) if _frame_indices is not None else "N/A"
+                    _frame_indices = (
+                        getattr(_obj, "frame_indices", None) if _obj else None
+                    )
+                    _frame_indices_str = (
+                        str(_frame_indices) if _frame_indices is not None else "N/A"
+                    )
                     bbox_id_result.content = (
                         f"**Drawing bbox for:** {obj_label} (ID: `{oid}`)\n\n"
                         f"**BBox Center:** x={_center[0]:.3f}, y={_center[1]:.3f}, z={_center[2]:.3f}\n\n"
@@ -1578,12 +1582,22 @@ class KeySGVisualizer:
                             _center_str = f"\n\n**BBox Center:** x={_center[0]:.3f}, y={_center[1]:.3f}, z={_center[2]:.3f}"
                         # Get frame_indices for this object
                         _grounded_obj = next(
-                            (o for o in self.objects if str(getattr(o, "id", "")) == str(obj_id)),
+                            (
+                                o
+                                for o in self.objects
+                                if str(getattr(o, "id", "")) == str(obj_id)
+                            ),
                             None,
                         )
-                        _frame_indices = getattr(_grounded_obj, "frame_indices", None) if _grounded_obj else None
+                        _frame_indices = (
+                            getattr(_grounded_obj, "frame_indices", None)
+                            if _grounded_obj
+                            else None
+                        )
                         if _frame_indices is not None:
-                            _frame_indices_str = f"\n\n**Frame Indices:** {_frame_indices}"
+                            _frame_indices_str = (
+                                f"\n\n**Frame Indices:** {_frame_indices}"
+                            )
                         grounding_result.content = (
                             f"**Found:** {obj_label} (ID: `{obj_id}`)\n\n"
                             f"**Confidence:** {confidence:.2f}\n\n"
