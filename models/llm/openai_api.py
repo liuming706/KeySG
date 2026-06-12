@@ -229,6 +229,108 @@ class GPTInterface:
             return match.group(1).strip()
         return text.strip()
 
+    def _build_format_hint(self, response_model: Type[BaseModel]) -> str:
+        """Build a simplified, model-friendly format hint with field descriptions and an example.
+
+        Uses a human-readable field list + JSON example instead of the raw JSON Schema
+        (which contains ``$defs``, ``anyOf``, ``$ref`` etc.).  Non-OpenAI models
+        (Qwen, DeepSeek, vLLM-backed models) tend to echo back the schema definition
+        rather than fill it with data when they see the full ``model_json_schema()``.
+        The simplified hint avoids this confusion.
+        """
+        schema = response_model.model_json_schema()
+        defs = schema.get("$defs", {})
+        properties = schema.get("properties", {})
+
+        field_lines: List[str] = []
+        for name, prop in properties.items():
+            resolved = self._resolve_schema_ref(prop, defs)
+            type_str = self._schema_type_label(resolved)
+            desc = resolved.get("description", "")
+            field_lines.append(f"  - \"{name}\" ({type_str}): {desc}")
+
+        fields_block = "\n".join(field_lines)
+
+        example = self._build_example_from_schema(schema, defs)
+        example_json = json.dumps(example, ensure_ascii=False, indent=2)
+
+        hint = (
+            "You MUST respond with ONLY a single JSON object — your actual data, NOT the schema definition.\n"
+            "Do NOT return ``$defs``, ``properties``, or ``anyOf`` blocks. "
+            "Do NOT wrap it in markdown fences.\n\n"
+            f"Required fields for {response_model.__name__}:\n{fields_block}\n\n"
+            f"Example output (replace values with your actual observations):\n{example_json}"
+        )
+        return hint
+
+    def _resolve_schema_ref(self, prop: Dict[str, Any], defs: Dict[str, Any]) -> Dict[str, Any]:
+        """Resolve ``$ref`` pointers in a schema property to the actual definition."""
+        if "$ref" in prop:
+            ref_name = prop["$ref"].replace("#/$defs/", "")
+            return defs.get(ref_name, prop)
+        return prop
+
+    def _schema_type_label(self, resolved: Dict[str, Any]) -> str:
+        """Produce a short human-readable type label from a resolved schema property."""
+        if "anyOf" in resolved:
+            types = [p.get("type", "unknown") for p in resolved["anyOf"] if isinstance(p, dict)]
+            return " | ".join(types) if types else "optional"
+        if "type" in resolved:
+            base = resolved["type"]
+            if base == "array":
+                items = resolved.get("items", {})
+                if "$ref" in items:
+                    ref_name = items["$ref"].replace("#/$defs/", "")
+                    return f"array of {ref_name}"
+                item_type = items.get("type", "object")
+                return f"array of {item_type}"
+            return base
+        return "any"
+
+    def _build_example_from_schema(self, schema: Dict[str, Any], defs: Dict[str, Any]) -> Dict[str, Any]:
+        """Build a concrete JSON example from the schema, using placeholder values."""
+        properties = schema.get("properties", {})
+        required = set(schema.get("required", []))
+        example: Dict[str, Any] = {}
+        for name, prop in properties.items():
+            resolved = self._resolve_schema_ref(prop, defs)
+            example[name] = self._example_value_for(resolved, defs, name in required)
+        return example
+
+    def _example_value_for(self, resolved: Dict[str, Any], defs: Dict[str, Any], is_required: bool) -> Any:
+        """Generate a placeholder value for a single schema property."""
+        if "anyOf" in resolved:
+            for variant in resolved["anyOf"]:
+                if isinstance(variant, dict) and variant.get("type") != "null":
+                    return self._example_value_for(variant, defs, True)
+            return None
+
+        typ = resolved.get("type", "string")
+        if typ == "string":
+            desc = resolved.get("description", "")
+            return f"<{desc[:40]}>" if desc else "<string>"
+        if typ == "number" or typ == "integer":
+            return 0.0 if typ == "number" else 0
+        if typ == "boolean":
+            return False
+        if typ == "array":
+            items_schema = resolved.get("items", {})
+            items_resolved = self._resolve_schema_ref(items_schema, defs)
+            if items_resolved.get("type") == "object":
+                nested_props = items_resolved.get("properties", {})
+                nested_required = set(items_resolved.get("required", []))
+                nested_example = {}
+                for nname, nprop in nested_props.items():
+                    nested_example[nname] = self._example_value_for(nprop, defs, nname in nested_required)
+                return [nested_example]
+            if items_resolved.get("type") == "string":
+                return ["<item>"]
+            return [{}]
+        if typ == "object":
+            obj_props = resolved.get("properties", {})
+            return {k: "<value>" for k in obj_props}
+        return "<value>"
+
     def _structured_via_chat(
         self,
         prompt: Union[str, List[Dict[str, Any]]],
@@ -240,14 +342,7 @@ class GPTInterface:
         **_: Any,
     ) -> BaseModel:
         """Fallback structured output generation via Chat Completions."""
-        schema = json.dumps(
-            response_model.model_json_schema(), ensure_ascii=False, indent=2
-        )
-        format_hint = (
-            "Return ONLY valid JSON matching this schema exactly. "
-            "Do not wrap it in markdown fences.\n\n"
-            f"JSON schema:\n{schema}"
-        )
+        format_hint = self._build_format_hint(response_model)
         merged_instructions = (
             f"{instructions}\n\n{format_hint}" if instructions else format_hint
         )
@@ -284,6 +379,20 @@ class GPTInterface:
             )
             # LLM returned non-JSON text; try to extract JSON from it
             import re as _re
+
+            # Detect if the LLM echoed back the schema definition instead of actual data.
+            # This is the most common failure mode with non-OpenAI models (Qwen, vLLM, etc).
+            try:
+                raw_obj = json.loads(cleaned_text)
+                if isinstance(raw_obj, dict) and "$defs" in raw_obj:
+                    logger.warning(
+                        "[_structured_via_chat] LLM returned schema definition (has '$defs') "
+                        "instead of actual data for model {}. This is a common failure with "
+                        "non-OpenAI models. The format hint has been improved to prevent this.",
+                        response_model.__name__,
+                    )
+            except Exception:
+                pass
 
             # Try to extract the "properties" wrapper that some LLMs (e.g., qwen) produce.
             # The LLM may return {"properties": {...}} instead of the flat object.
