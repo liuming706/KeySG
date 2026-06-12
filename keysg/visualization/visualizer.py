@@ -27,6 +27,7 @@ from scipy.spatial.transform import Rotation
 import viser
 
 from keysg.utils.load_utils import get_floors, get_objects, get_rooms, load_scene_nodes
+from keysg.utils.logging_setup import setup_logging
 
 # ---------------------------------------------------------------------------
 # Color palette
@@ -1858,7 +1859,15 @@ def main() -> None:
         choices=["responses_parse", "chat"],
         help="Method for structured LLM output: 'parse' (OpenAI responses.parse) or 'chat' (JSON extraction from chat). Use 'chat' for non-OpenAI models like Qwen. (default: chat)",
     )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="INFO",
+        choices=["TRACE", "DEBUG", "INFO", "SUCCESS", "WARNING", "ERROR", "CRITICAL"],
+        help="Console log level (default: INFO)",
+    )
     args = parser.parse_args()
+    setup_logging(console_level=args.log_level)
     KeySGVisualizer(
         args.scene_dir,
         port=args.port,
