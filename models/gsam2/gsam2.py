@@ -158,6 +158,7 @@ class GroundingSAM2:
         sam2_model_config: str,
         llmdet_model_id: str,
         vlm_model: str = "deepseek-v4-flash",
+        qa_method: str = "responses_parse",
         device: Optional[str] = None,
         force_cpu: bool = False,
         llmdet_max_tags_per_batch: int = 80,  # 30 会爆 8GB 显存
@@ -167,7 +168,8 @@ class GroundingSAM2:
         self.llmdet_model_id = llmdet_model_id or "iSEE-Laboratory/llmdet_large"
         self.llmdet_max_tags_per_batch = llmdet_max_tags_per_batch
         self.vlm_model = vlm_model
-        print(f"vlm_model: {vlm_model}")
+        self.qa_method = qa_method
+        print(f"vlm_model: {vlm_model}, qa_method: {qa_method}")
         self._vlm_client = None
 
         if device is not None:
@@ -205,7 +207,7 @@ class GroundingSAM2:
 
     def _ensure_vlm_client(self):
         if self._vlm_client is None:
-            self._vlm_client = VLMInterface(self.vlm_model)
+            self._vlm_client = VLMInterface(self.vlm_model, qa_method=self.qa_method)
 
     def predict(
         self,
@@ -365,7 +367,7 @@ class GroundingSAM2:
 
         class_names = []
         class_ids = []
-        logger.info("raw_labels type {}", type(raw_labels))
+        # logger.info("raw_labels type {}", type(raw_labels))
         if hasattr(raw_labels, "cpu"):
             # Older Transformers versions returned integer ids in labels.
             label_indices = raw_labels.cpu().numpy()
@@ -680,7 +682,7 @@ class GroundingSAM2:
                 if not str(class_name).strip()
             ]
             if empty_label_indices:
-                logger.warning(
+                logger.debug(
                     "Visualization received empty detection labels; these would appear as score-only without fallback: indices={}, labels={}, scores={}",
                     empty_label_indices,
                     results["labels"],

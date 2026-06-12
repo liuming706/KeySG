@@ -119,7 +119,10 @@ class NodesRepo:
     def _initialize_components(self) -> None:
         """Initialize shared model instances."""
         # Initialize VLM for functional element tagging
-        self.vlm = GPT_VLMInterface(self.vlm_config.get("model", "deepseek-v4-flash"))
+        self.vlm = GPT_VLMInterface(
+                self.vlm_config.get("model", "deepseek-v4-flash"),
+                qa_method=self.vlm_config.get("qa_method", "responses_parse"),
+            )
         print(f"self.vlm: {self.vlm_config.get('model', 'deepseek-v4-flash')}")
         if NodesRepo._shared_segmentor is None:
             logger.info("[NodesRepo] Loading GroundingSAM2...")
@@ -149,6 +152,7 @@ class NodesRepo:
                 "llmdet_model_id", "iSEE-Laboratory/llmdet_large"
             ),
             "vlm_model": vlm_cfg.get("model", "deepseek-v4-flash"),
+            "qa_method": vlm_cfg.get("qa_method", "responses_parse"),
             "device": gsam2_cfg.get("device", self.clip_config.get("device")),
             "force_cpu": gsam2_cfg.get("force_cpu", False),
         }
