@@ -8,7 +8,7 @@ dataset:
   depth_scale: 1000.0 # Depth image scaling factor (mm to meters)
   depth_min: 0.3 # Minimum valid depth value (meters)
   depth_max: 8.0 # Maximum valid depth value (meters)
-  downsample_stride: 1
+  downsample_stride: 20
 
 # Output directory for all pipeline results
 output_dir: output/keysg_rag1
@@ -40,7 +40,7 @@ segmentation:
   sampling_eps: 0.001 # DBSCAN epsilon parameter for clustering [Keyframe sampling]
   sampling_min_samples: 2 # DBSCAN minimum samples per cluster [Keyframe sampling]
   sampling_rot_weight: 1.5 # Weight for rotation in pose sampling distance [Keyframe sampling]
-  sampling_min_cluster_size: 10 # HDBSCAN minimum cluster size for keyframe sampling
+  sampling_min_cluster_size: 5 # HDBSCAN minimum cluster size for keyframe sampling
   points_in_room_threshold: 0.65 # Minimum fraction of points to assign frame to room
   up_axis: z # Which axis is vertical: 'y' (Y-up) or 'z' (Z-up)
 

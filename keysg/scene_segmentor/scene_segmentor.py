@@ -68,7 +68,9 @@ class SceneSegmentor:
         self.points_in_room_threshold = points_in_room_threshold
 
         if flip_zy and up_axis == "y":
-            logger.warning("flip_zy is deprecated; use up_axis='z' instead. Treating flip_zy=True as up_axis='z'.")
+            logger.warning(
+                "flip_zy is deprecated; use up_axis='z' instead. Treating flip_zy=True as up_axis='z'."
+            )
             up_axis = "z"
         self.flip_zy = flip_zy
 
@@ -264,7 +266,9 @@ class SceneSegmentor:
                 pcd.get_axis_aligned_bounding_box().get_box_points()
             )
             floor.floor_zero_level = float(np.nanmin(pts[:, self._up_idx]))
-            floor.floor_height = float(np.nanmax(pts[:, self._up_idx]) - floor.floor_zero_level)
+            floor.floor_height = float(
+                np.nanmax(pts[:, self._up_idx]) - floor.floor_zero_level
+            )
 
         room = Room("0_0", floor.floor_id, "room_0")
         room.pcd = pcd
@@ -308,7 +312,10 @@ class SceneSegmentor:
                 for room in rooms:
                     if room.polygon is None:
                         continue
-                    horiz_vals = (pose[self._horiz_idx[0], 3], pose[self._horiz_idx[1], 3])
+                    horiz_vals = (
+                        pose[self._horiz_idx[0], 3],
+                        pose[self._horiz_idx[1], 3],
+                    )
                     if room.polygon.contains(Point(*horiz_vals)):
                         if self._validate_pose_in_room(idx, room):
                             room.indices.append(idx)
@@ -336,6 +343,8 @@ class SceneSegmentor:
                     min_cluster_size=self.sampling_min_cluster_size,
                 )
                 room.sparse_indices = sampled if sampled else list(room.indices)
+                # lumen_delete
+                # room.sparse_indices = []
                 logger.info(
                     f"Room {room.id}: {len(room.sparse_indices)} keyframes from {len(room.indices)} frames"
                 )
@@ -358,7 +367,9 @@ class SceneSegmentor:
                 )
             else:
                 pts = np.asarray(floor.pcd.points)
-                up_min, up_max = np.nanmin(pts[:, self._up_idx]), np.nanmax(pts[:, self._up_idx])
+                up_min, up_max = np.nanmin(pts[:, self._up_idx]), np.nanmax(
+                    pts[:, self._up_idx]
+                )
                 bounds[floor.floor_id] = (up_min, up_max)
         return bounds
 
