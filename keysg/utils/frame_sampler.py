@@ -40,6 +40,12 @@ class HDBSCANKeyframeSampler:
         Args:
             verbose (bool): Whether to print progress information.
         """
+        # HDBSCAN requires at least 2 samples; if fewer, return all indices directly
+        if len(self.indices) < min_cluster_size:
+            if verbose:
+                print(f"Skipping HDBSCAN: only {len(self.indices)} frame(s), need ≥2.")
+            return sorted(self.indices)
+
         if verbose:
             print(f"Sampling frames (HDBSCAN): min_cluster_size={min_cluster_size}...")
 
@@ -79,9 +85,9 @@ class HDBSCANKeyframeSampler:
             print(f"HDBSCAN selected {len(selected_indices)} frames.")
         if not selected_indices:
             return []
-        # return sorted(selected_indices)
+        return sorted(selected_indices)
         # lumen_delete
-        return [selected_indices[0]]
+        # return [selected_indices[0]]
 
     def _clean_and_scale_features(self, pose_features, verbose=True):
         """
