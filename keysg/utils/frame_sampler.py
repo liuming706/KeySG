@@ -134,3 +134,88 @@ class HDBSCANKeyframeSampler:
         scaled_features = scaler.fit_transform(pose_features)
 
         return scaled_features
+
+
+class RotTransKeyframeSampler:
+    """Select keyframes based on rotation angle and translation distance thresholds.
+
+    Iterates through poses in order and selects a frame as a keyframe when
+    the cumulative rotation angle or translation distance from the last
+    selected keyframe exceeds the configured threshold.
+    """
+
+    def __init__(
+        self, dataset: Any, selected_indices: Optional[List[int]] = None
+    ) -> None:
+        self.dataset = dataset
+        if selected_indices:
+            self.indices = list(selected_indices)
+        else:
+            self.indices = list(range(len(dataset)))
+
+        poses = []
+        for idx in self.indices:
+            _, _, pose = self.dataset[idx]
+            poses.append(pose)
+
+        self.poses = np.stack(poses, axis=0) if poses else np.empty((0, 4, 4))
+
+    def sample_rot_trans(
+        self,
+        rot_angle_thresh: float = 15.0,
+        trans_dist_thresh: float = 0.3,
+        verbose: bool = True,
+    ) -> List[int]:
+        """Sample keyframes by rotation angle and translation distance thresholds.
+
+        Args:
+            rot_angle_thresh: Minimum rotation angle (degrees) from the last
+                selected keyframe to trigger selection of a new keyframe.
+            trans_dist_thresh: Minimum translation distance (meters) from the
+                last selected keyframe to trigger selection of a new keyframe.
+            verbose: Whether to print progress information.
+
+        Returns:
+            Sorted list of selected frame indices.
+        """
+        if len(self.indices) <= 1:
+            if verbose:
+                print(
+                    f"Skipping rot_trans sampling: only {len(self.indices)} frame(s)."
+                )
+            return sorted(self.indices)
+
+        if verbose:
+            print(
+                f"Sampling frames (rot_trans): rot_angle_thresh={rot_angle_thresh}°, "
+                f"trans_dist_thresh={trans_dist_thresh}m..."
+            )
+
+        selected_indices = [self.indices[0]]
+        last_rot = self.poses[0, :3, :3]
+        last_trans = self.poses[0, :3, 3]
+
+        for i in range(1, len(self.indices)):
+            curr_rot = self.poses[i, :3, :3]
+            curr_trans = self.poses[i, :3, 3]
+
+            # Compute relative rotation angle (degrees)
+            relative_rot = last_rot.T @ curr_rot
+            angle_rad = Rotation.from_matrix(relative_rot).magnitude()
+            angle_deg = np.degrees(angle_rad)
+
+            # Compute translation distance (meters)
+            dist = np.linalg.norm(curr_trans - last_trans)
+
+            if angle_deg >= rot_angle_thresh or dist >= trans_dist_thresh:
+                selected_indices.append(self.indices[i])
+                last_rot = curr_rot
+                last_trans = curr_trans
+
+        if verbose:
+            print(
+                f"rot_trans selected {len(selected_indices)} frames "
+                f"from {len(self.indices)} total."
+            )
+
+        return sorted(selected_indices)

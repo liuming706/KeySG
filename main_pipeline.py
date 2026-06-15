@@ -192,6 +192,9 @@ class KeySGPipeline:
             sampling_min_samples=seg_cfg.sampling_min_samples,
             sampling_rot_weight=seg_cfg.sampling_rot_weight,
             sampling_min_cluster_size=seg_cfg.sampling_min_cluster_size,
+            sampling_method=getattr(seg_cfg, "sampling_method", "hdbscan"),
+            rot_angle_thresh=getattr(seg_cfg, "rot_angle_thresh", 15.0),
+            trans_dist_thresh=getattr(seg_cfg, "trans_dist_thresh", 0.3),
             points_in_room_threshold=seg_cfg.points_in_room_threshold,
             up_axis=getattr(seg_cfg, "up_axis", "y"),
         )

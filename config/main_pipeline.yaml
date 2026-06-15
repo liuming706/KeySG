@@ -41,6 +41,9 @@ segmentation:
   sampling_min_samples: 2 # DBSCAN minimum samples per cluster [Keyframe sampling]
   sampling_rot_weight: 1.5 # Weight for rotation in pose sampling distance [Keyframe sampling]
   sampling_min_cluster_size: 5 # HDBSCAN minimum cluster size for keyframe sampling
+  sampling_method: rot_trans # Keyframe sampling method: 'hdbscan' or 'rot_trans'
+  rot_angle_thresh: 15.0 # Rotation angle threshold (degrees) for rot_trans keyframe sampling
+  trans_dist_thresh: 0.3 # Translation distance threshold (meters) for rot_trans keyframe sampling
   points_in_room_threshold: 0.65 # Minimum fraction of points to assign frame to room
   up_axis: z # Which axis is vertical: 'y' (Y-up) or 'z' (Z-up)
 

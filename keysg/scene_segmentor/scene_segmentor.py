@@ -25,7 +25,7 @@ from .floor_segmentation import FloorSegmentation
 from .room import Room
 from .room_segmentation import RoomSegmentation
 from ..utils.dataset_utils import create_pcd_for_frame
-from ..utils.frame_sampler import HDBSCANKeyframeSampler
+from ..utils.frame_sampler import HDBSCANKeyframeSampler, RotTransKeyframeSampler
 
 
 class SceneSegmentor:
@@ -51,6 +51,9 @@ class SceneSegmentor:
         sampling_min_samples: int = 5,
         sampling_rot_weight: float = 1.5,
         sampling_min_cluster_size: int = 3,
+        sampling_method: str = "hdbscan",
+        rot_angle_thresh: float = 15.0,
+        trans_dist_thresh: float = 0.3,
         points_in_room_threshold: float = 0.65,
         flip_zy: bool = False,
         up_axis: str = "y",
@@ -65,6 +68,9 @@ class SceneSegmentor:
         self.sampling_min_samples = sampling_min_samples
         self.sampling_rot_weight = sampling_rot_weight
         self.sampling_min_cluster_size = sampling_min_cluster_size
+        self.sampling_method = sampling_method
+        self.rot_angle_thresh = rot_angle_thresh
+        self.trans_dist_thresh = trans_dist_thresh
         self.points_in_room_threshold = points_in_room_threshold
 
         if flip_zy and up_axis == "y":
@@ -329,22 +335,36 @@ class SceneSegmentor:
 
     def _sample_keyframes(self, floor_rooms: List[Tuple[Floor, List[Room]]]) -> None:
         """Sample representative keyframes for each room."""
-        logger.info("Sampling keyframes...")
+        logger.info(f"Sampling keyframes (method={self.sampling_method})...")
 
         for _, rooms in floor_rooms:
             for room in rooms:
                 if not room.indices:
                     room.sparse_indices = []
                     continue
-                sampler = HDBSCANKeyframeSampler(
-                    self.dataset, selected_indices=room.indices
-                )
-                sampled = sampler.sample_hdbscan(
-                    min_cluster_size=self.sampling_min_cluster_size,
-                )
+
+                if self.sampling_method == "hdbscan":
+                    sampler = HDBSCANKeyframeSampler(
+                        self.dataset, selected_indices=room.indices
+                    )
+                    sampled = sampler.sample_hdbscan(
+                        min_cluster_size=self.sampling_min_cluster_size,
+                    )
+                elif self.sampling_method == "rot_trans":
+                    sampler = RotTransKeyframeSampler(
+                        self.dataset, selected_indices=room.indices
+                    )
+                    sampled = sampler.sample_rot_trans(
+                        rot_angle_thresh=self.rot_angle_thresh,
+                        trans_dist_thresh=self.trans_dist_thresh,
+                    )
+                else:
+                    raise ValueError(
+                        f"Unknown sampling_method: {self.sampling_method}. "
+                        f"Supported: 'hdbscan', 'rot_trans'"
+                    )
+
                 room.sparse_indices = sampled if sampled else list(room.indices)
-                # lumen_delete
-                # room.sparse_indices = []
                 logger.info(
                     f"Room {room.id}: {len(room.sparse_indices)} keyframes from {len(room.indices)} frames"
                 )
