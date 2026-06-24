@@ -98,6 +98,8 @@ keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/da
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/merged_from_gs_renders
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/merged_from_gs_mesh
 keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/merged_from_gs_mesh_qiyu/merged_from_gs_mesh
+keysg-build dataset.kind=replica dataset.root_dir=/home/ubt/workspace/vggt_ws/datasets/c2_show/merged_from_gs_mesh
+
 
 
 # HM3DSem scene
@@ -206,7 +208,7 @@ segmentation:
 
 nodes:
   segmentor: gsam2            # segmentation backend
-  object_tags: vlm            # vlm | ram
+  object_tags: vlm            # vlm | ram | coco
   use_keyframes_only: true    # run detection only on sampled keyframes
   skip_frames: 15
 

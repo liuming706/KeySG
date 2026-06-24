@@ -218,4 +218,6 @@ class RotTransKeyframeSampler:
                 f"from {len(self.indices)} total."
             )
 
-        return sorted(selected_indices)
+        # return sorted(selected_indices)
+        # lumen_delete
+        return [selected_indices[0]]

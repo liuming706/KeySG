@@ -8,7 +8,7 @@ dataset:
   depth_scale: 1000.0 # Depth image scaling factor (mm to meters)
   depth_min: 0.3 # Minimum valid depth value (meters)
   depth_max: 8.0 # Maximum valid depth value (meters)
-  downsample_stride: 20
+  downsample_stride: 1
 
 # Output directory for all pipeline results
 output_dir: output/keysg_rag1
@@ -27,9 +27,9 @@ load:
 # Vision-language model configuration for room descriptions
 vlm:
   provider: openai # openai | ollama
-  model: qwen3.7-plus # qwen3.7-plus # OpenAI model or Ollama model name (e.g., Qwen/Qwen3-VL-8B-Instruct)
+  model: Qwen/Qwen3-VL-8B-Instruct # qwen3.7-plus # OpenAI model or Ollama model name (e.g., Qwen/Qwen3-VL-8B-Instruct)
   # text_model: sensenova-6.7-flash-lite  # Optional separate model for text-only summarization
-  qa_method: chat # QA method: responses_parse (OpenAI Responses API) | chat (Chat Completions API)
+  qa_method: responses_parse # QA method: responses_parse (OpenAI Responses API) | chat (Chat Completions API)
 
   # Scene segmentation parameters
 segmentation:
@@ -42,15 +42,15 @@ segmentation:
   sampling_rot_weight: 1.5 # Weight for rotation in pose sampling distance [Keyframe sampling]
   sampling_min_cluster_size: 5 # HDBSCAN minimum cluster size for keyframe sampling
   sampling_method: rot_trans # Keyframe sampling method: 'hdbscan' or 'rot_trans'
-  rot_angle_thresh: 15.0 # Rotation angle threshold (degrees) for rot_trans keyframe sampling
-  trans_dist_thresh: 0.3 # Translation distance threshold (meters) for rot_trans keyframe sampling
+  rot_angle_thresh: 30.0 # Rotation angle threshold (degrees) for rot_trans keyframe sampling
+  trans_dist_thresh: 0.5 # Translation distance threshold (meters) for rot_trans keyframe sampling
   points_in_room_threshold: 0.65 # Minimum fraction of points to assign frame to room
   up_axis: z # Which axis is vertical: 'y' (Y-up) or 'z' (Z-up)
 
 # Object node extraction and merging parameters
 nodes:
   segmentor: gsam2 # Segmentation backend
-  object_tags: vlm # Method for object tags: 'vlm' (vision-language model) or 'ram' (RAM++ tagger)
+  object_tags: coco # Method for object tags: 'vlm' (vision-language model), 'ram' (RAM++ tagger), or 'coco' (config/coco.txt)
   extract_functional_elements: false # Enable/disable functional element extraction
   functional_elements_method: sparse_tags # Method for functional elements: 'sparse_tags' or 'detector' (funGraph model) or 'dense_tags' (per object vlm tags)
   fun_tags: "" # Optional fixed functional element tags (empty = use VLM tagging)
@@ -84,9 +84,9 @@ nodes:
     enabled: false # true: additionally run red-bbox VLM calls to overwrite keyframe descriptions
     batch_size: 20 # VLM batch size (only used when enabled: true)
     update_label: true # Replace node.label with the VLM/keyframe-refined name
-
+build_scene_description: false
 # RAG (Retrieval-Augmented Generation) configuration for scene querying
-build_rag: true # Build RAG database after pipeline completion
+build_rag: false # Build RAG database after pipeline completion
 rag:
   embedding_model: sentence-transformers/all-MiniLM-L6-v2 # Free local embedding model (sentence-transformers)
   # Alternative: text-embedding-3-small (OpenAI, requires API key and costs money)

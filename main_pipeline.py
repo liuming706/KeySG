@@ -341,12 +341,24 @@ class KeySGPipeline:
             self.output_dir, "segmentation", f"floor_{fid}", f"room_{rid}"
         )
         tags_path = os.path.join(room_dir, "object_tags.json")
+        object_tags_method = str(getattr(self.cfg.nodes, "object_tags", "")).lower()
 
-        if os.path.exists(tags_path) and self.cfg.nodes.object_tags == "vlm":
-            with open(tags_path, "r") as f:
+        if object_tags_method == "coco":
+            coco_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "config", "coco.txt"
+            )
+            with open(coco_path, "r", encoding="utf-8") as f:
+                tags = [line.strip() for line in f if line.strip()]
+            os.makedirs(room_dir, exist_ok=True)
+            with open(tags_path, "w", encoding="utf-8") as f:
+                json.dump({"tags": tags}, f)
+            return tags
+
+        if os.path.exists(tags_path) and object_tags_method == "vlm":
+            with open(tags_path, "r", encoding="utf-8") as f:
                 return json.load(f).get("tags", [])
 
-        if self.cfg.nodes.object_tags == "vlm":
+        if object_tags_method == "vlm":
             room = next(
                 (
                     r
@@ -360,7 +372,7 @@ class KeySGPipeline:
                 tags_dict = asyncio.run(self.scene_descriptor.tag_rooms([room]))
                 tags = tags_dict.get(rid, [])
                 os.makedirs(room_dir, exist_ok=True)
-                with open(tags_path, "w") as f:
+                with open(tags_path, "w", encoding="utf-8") as f:
                     json.dump({"tags": list(tags)}, f)
                 return tags
 
@@ -507,16 +519,17 @@ class KeySGPipeline:
             self.run_node_extraction()
 
         # Scene Description
-        if self.cfg.load.scene_description:
-            self.load_scene_description()
-        else:
-            self._run_scene_description()
+        if getattr(self.cfg, "build_scene_description", True):
+            if self.cfg.load.scene_description:
+                self.load_scene_description()
+            else:
+                self._run_scene_description()
 
-        # Per-object Descriptions (vlm or keyframe).
-        # Runs after scene description so both methods have what they need.
-        self._run_object_descriptions()
-        # mark keyframes with object ids from llmdet and select object ids
-        self._label_keyframes()
+            # Per-object Descriptions (vlm or keyframe).
+            # Runs after scene description so both methods have what they need.
+            self._run_object_descriptions()
+            # mark keyframes with object ids from llmdet and select object ids
+            self._label_keyframes()
         # Build KeySG Graph
         if getattr(self.cfg, "build_rag", True):
             try:
