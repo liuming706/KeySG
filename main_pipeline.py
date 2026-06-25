@@ -34,6 +34,7 @@ from keysg.scene_segmentor.extract_nodes import NodesRepo
 from keysg.scene_segmentor.scene_segmentor import SceneSegmentor
 from keysg.utils.dataset_utils import get_frame_camera_context
 from keysg.utils.logging_setup import setup_logging, install_stream_capture
+from keysg.utils.raster_map import save_scene_raster_map
 from keysg.utils.vis_utils import (
     project_objects_to_masks,
     match_detections_to_objects,
@@ -154,6 +155,7 @@ class KeySGPipeline:
             self._store_segmentation_results(
                 floors, floor_rooms, dense_map, sampled_map
             )
+            self._save_scene_raster_map(floor_rooms)
             self._save_keyframe_poses()
             logger.info(
                 "Loaded {} floors with {} rooms",
@@ -199,6 +201,7 @@ class KeySGPipeline:
             up_axis=getattr(seg_cfg, "up_axis", "y"),
         )
         seg.run()
+        self._save_scene_raster_map(seg.get_rooms_by_floor())
         logger.info("Segmentation saved to {}", seg.save())
 
         self._store_segmentation_results(
@@ -221,6 +224,27 @@ class KeySGPipeline:
         self.dense_map = dense_map
         self.sampled_map = sampled_map
         self.rooms = [room for _, rooms in floor_rooms for room in rooms]
+
+    def _save_scene_raster_map(self, floor_rooms: List) -> None:
+        map_cfg = getattr(self.cfg, "scene_map", {})
+        if not getattr(map_cfg, "enabled", True):
+            return
+
+        seg_cfg = self.cfg.segmentation
+        try:
+            save_scene_raster_map(
+                floor_rooms,
+                self.output_dir,
+                up_axis=getattr(seg_cfg, "up_axis", "y"),
+                resolution=getattr(map_cfg, "resolution", seg_cfg.grid_resolution),
+                scene_height=getattr(map_cfg, "scene_height", None),
+                floor_clearance=getattr(map_cfg, "floor_clearance", 0.2),
+                obstacle_min_height=getattr(map_cfg, "obstacle_min_height", 0.25),
+                free_dilation_radius=getattr(map_cfg, "free_dilation_radius", 1),
+                occupied_dilation_radius=getattr(map_cfg, "occupied_dilation_radius", 0),
+            )
+        except Exception as e:
+            logger.warning("Failed to save scene raster map: {}", e)
 
     def _save_keyframe_poses(self) -> None:
         """Save keyframe camera poses to disk for use by the visualizer."""
@@ -513,10 +537,11 @@ class KeySGPipeline:
             self.run_segmentation()
 
         # Node Extraction
-        if self.cfg.load.nodes:
-            self.load_nodes()
-        else:
-            self.run_node_extraction()
+        if getattr(self.cfg, "build_object_node", True):
+            if self.cfg.load.nodes:
+                self.load_nodes()
+            else:
+                self.run_node_extraction()
 
         # Scene Description
         if getattr(self.cfg, "build_scene_description", True):

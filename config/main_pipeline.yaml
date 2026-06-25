@@ -47,7 +47,17 @@ segmentation:
   points_in_room_threshold: 0.65 # Minimum fraction of points to assign frame to room
   up_axis: z # Which axis is vertical: 'y' (Y-up) or 'z' (Z-up)
 
+scene_map:
+  enabled: true
+  scene_height: 2.2 # Meters above floor to rasterize; null/<=0 uses segmented floor height
+  resolution: 0.05 # Meters per pixel for umap/map.png
+  floor_clearance: 1.8 # Points within this height from floor are free cells
+  obstacle_min_height: 2 # Points above this height from floor are occupied cells
+  free_dilation_radius: 2
+  occupied_dilation_radius: 0
+
 # Object node extraction and merging parameters
+build_object_node: false
 nodes:
   segmentor: gsam2 # Segmentation backend
   object_tags: coco # Method for object tags: 'vlm' (vision-language model), 'ram' (RAM++ tagger), or 'coco' (config/coco.txt)
