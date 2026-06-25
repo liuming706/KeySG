@@ -41,7 +41,7 @@ segmentation:
   sampling_min_samples: 2 # DBSCAN minimum samples per cluster [Keyframe sampling]
   sampling_rot_weight: 1.5 # Weight for rotation in pose sampling distance [Keyframe sampling]
   sampling_min_cluster_size: 5 # HDBSCAN minimum cluster size for keyframe sampling
-  sampling_method: rot_trans # Keyframe sampling method: 'hdbscan' or 'rot_trans'
+  sampling_method: hdbscan # Keyframe sampling method: 'hdbscan' or 'rot_trans'
   rot_angle_thresh: 30.0 # Rotation angle threshold (degrees) for rot_trans keyframe sampling
   trans_dist_thresh: 0.5 # Translation distance threshold (meters) for rot_trans keyframe sampling
   points_in_room_threshold: 0.65 # Minimum fraction of points to assign frame to room
@@ -57,7 +57,7 @@ scene_map:
   occupied_dilation_radius: 0
 
 # Object node extraction and merging parameters
-build_object_node: false
+build_object_node: true
 nodes:
   segmentor: gsam2 # Segmentation backend
   object_tags: coco # Method for object tags: 'vlm' (vision-language model), 'ram' (RAM++ tagger), or 'coco' (config/coco.txt)

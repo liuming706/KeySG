@@ -120,9 +120,9 @@ class NodesRepo:
         """Initialize shared model instances."""
         # Initialize VLM for functional element tagging
         self.vlm = GPT_VLMInterface(
-                self.vlm_config.get("model", "deepseek-v4-flash"),
-                qa_method=self.vlm_config.get("qa_method", "responses_parse"),
-            )
+            self.vlm_config.get("model", "deepseek-v4-flash"),
+            qa_method=self.vlm_config.get("qa_method", "responses_parse"),
+        )
         print(f"self.vlm: {self.vlm_config.get('model', 'deepseek-v4-flash')}")
         if NodesRepo._shared_segmentor is None:
             logger.info("[NodesRepo] Loading GroundingSAM2...")
@@ -491,7 +491,8 @@ class NodesRepo:
         merged = self._post_hoc_merge_nodes(
             merged, post_hoc_iou_thresh, post_hoc_sim_thresh, radius
         )
-        self._extract_clip_features(merged)
+        # lumen_delete 暂时不提取 clip
+        # self._extract_clip_features(merged)
         self._compute_bboxes(merged)
 
         logger.info(f"Merge complete. Final node count: {len(merged)}")

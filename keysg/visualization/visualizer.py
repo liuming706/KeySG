@@ -223,7 +223,9 @@ def _load_frame_images(frame_chunks: List, max_images: int = 4) -> List:
     return images
 
 
-def _build_spatial_relations(target_vis, anchor_vis, obj_by_id, up_idx=1, horiz_idx=None):
+def _build_spatial_relations(
+    target_vis, anchor_vis, obj_by_id, up_idx=1, horiz_idx=None
+):
     """Build rich directional spatial relation strings between target and anchor objects.
 
     Computes:
@@ -429,7 +431,9 @@ def _run_grounding_query(
 
         if target_vis and anchor_vis and relation_polarity and objects:
             obj_by_id = {str(o.id): o for o in objects}
-            spatial_lines = _build_spatial_relations(target_vis, anchor_vis, obj_by_id, up_idx=up_idx, horiz_idx=horiz_idx)
+            spatial_lines = _build_spatial_relations(
+                target_vis, anchor_vis, obj_by_id, up_idx=up_idx, horiz_idx=horiz_idx
+            )
             if spatial_lines:
                 sections.append(
                     "Spatial Relations (target <-> anchor):\n"
@@ -763,7 +767,9 @@ def _run_open_qa(
 
     if target_vis and anchor_vis and relation_polarity and objects:
         obj_by_id = {str(o.id): o for o in objects}
-        spatial_lines = _build_spatial_relations(target_vis, anchor_vis, obj_by_id, up_idx=up_idx, horiz_idx=horiz_idx)
+        spatial_lines = _build_spatial_relations(
+            target_vis, anchor_vis, obj_by_id, up_idx=up_idx, horiz_idx=horiz_idx
+        )
         if spatial_lines:
             sections.append("Spatial Relations:\n" + "\n".join(spatial_lines))
 
@@ -806,7 +812,7 @@ class KeySGVisualizer:
         show_roofs: bool = True,
         roof_margin: float = 0.12,
         qa_method: str = "chat",
-        up_axis: str = "y",
+        up_axis: str = "z",
     ):
         self.scene_dir = scene_dir
         self.port = port
