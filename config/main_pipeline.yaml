@@ -40,7 +40,7 @@ segmentation:
   sampling_eps: 0.001 # DBSCAN epsilon parameter for clustering [Keyframe sampling]
   sampling_min_samples: 2 # DBSCAN minimum samples per cluster [Keyframe sampling]
   sampling_rot_weight: 1.5 # Weight for rotation in pose sampling distance [Keyframe sampling]
-  sampling_min_cluster_size: 5 # HDBSCAN minimum cluster size for keyframe sampling
+  sampling_min_cluster_size: 7 # HDBSCAN minimum cluster size for keyframe sampling
   sampling_method: hdbscan # Keyframe sampling method: 'hdbscan' or 'rot_trans'
   rot_angle_thresh: 30.0 # Rotation angle threshold (degrees) for rot_trans keyframe sampling
   trans_dist_thresh: 0.5 # Translation distance threshold (meters) for rot_trans keyframe sampling

@@ -325,6 +325,120 @@ class KeySGPipeline:
             for room in rooms
             for obj in room.objects
         ]
+        self._save_dsg_json()
+
+    def _save_dsg_json(self) -> str:
+        dsg_dir = os.path.join(self.output_dir, "dsg")
+        os.makedirs(dsg_dir, exist_ok=True)
+        dsg_path = os.path.join(dsg_dir, "dsg.json")
+
+        dsg = {
+            "directed": False,
+            "edges": [],
+            "layer_ids": [2, 3, 4, 5],
+            "mesh_edges": [],
+            "mesh_layer_id": 1,
+            "multigraph": False,
+            "nodes": [
+                self._object_node_to_dsg(node, i)
+                for i, node in enumerate(self.object_nodes)
+            ],
+        }
+
+        with open(dsg_path, "w", encoding="utf-8") as f:
+            json.dump(dsg, f, indent=4)
+        logger.info(
+            "Saved DSG JSON with {} object nodes to {}", len(dsg["nodes"]), dsg_path
+        )
+        return dsg_path
+
+    def _object_node_to_dsg(self, node, index: int) -> Dict[str, Any]:
+        center, local_min, local_max = self._object_node_bounds(node)
+        color = self._dsg_node_color(index)
+        return {
+            "attributes": {
+                "bounding_box": {
+                    "max": local_max,
+                    "min": local_min,
+                    "type": "RAABB",
+                    "world_P_center": center,
+                    "world_R_center": {
+                        "w": 1.0,
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                    },
+                },
+                "color": color,
+                "is_active": False,
+                "last_update_time_ns": 0,
+                "mesh_connections": [],
+                "name": str(getattr(node, "label", "") or ""),
+                "position": center,
+                "registered": False,
+                "semantic_label": 0,
+                "type": "ObjectNodeAttributes",
+                "world_R_object": {
+                    "w": 1.0,
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0,
+                },
+            },
+            "id": self._dsg_node_id(node, index),
+            "layer": 2,
+        }
+
+    def _object_node_bounds(self, node) -> tuple[List[float], List[float], List[float]]:
+        points = None
+        pcd = getattr(node, "pcd", None)
+        if pcd is not None and len(pcd.points) > 0:
+            points = np.asarray(pcd.points, dtype=float)
+        elif getattr(node, "bbox_3d", None) is not None:
+            points = np.asarray(node.bbox_3d, dtype=float)
+
+        if points is None or points.size == 0:
+            center = np.zeros(3, dtype=float)
+            min_bound = np.zeros(3, dtype=float)
+            max_bound = np.zeros(3, dtype=float)
+        else:
+            points = points.reshape(-1, 3)
+            min_bound = np.nan_to_num(points.min(axis=0), nan=0.0)
+            max_bound = np.nan_to_num(points.max(axis=0), nan=0.0)
+            center = (min_bound + max_bound) / 2.0
+
+        return (
+            center.astype(float).tolist(),
+            (min_bound - center).astype(float).tolist(),
+            (max_bound - center).astype(float).tolist(),
+        )
+
+    def _dsg_node_color(self, index: int) -> List[int]:
+        hue = (index * 0.618033988749895) % 1.0
+        sector = int(hue * 6)
+        fraction = hue * 6 - sector
+        value = 255
+        chroma = 178
+        x = int(chroma * (1 - abs(fraction % 2 - 1)))
+        sector %= 6
+        if sector == 0:
+            rgb = [chroma, x, 0]
+        elif sector == 1:
+            rgb = [x, chroma, 0]
+        elif sector == 2:
+            rgb = [0, chroma, x]
+        elif sector == 3:
+            rgb = [0, x, chroma]
+        elif sector == 4:
+            rgb = [x, 0, chroma]
+        else:
+            rgb = [chroma, 0, x]
+        return [channel + value - chroma for channel in rgb]
+
+    def _dsg_node_id(self, node, index: int) -> int:
+        node_id = str(getattr(node, "id", "") or f"obj_{index}")
+        digest = hashlib.md5(node_id.encode("utf-8")).digest()
+        return int.from_bytes(digest[:8], byteorder="big", signed=False)
 
     def _extract_nodes_for_rooms(
         self,
