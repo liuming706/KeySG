@@ -241,7 +241,9 @@ class KeySGPipeline:
                 floor_clearance=getattr(map_cfg, "floor_clearance", 0.2),
                 obstacle_min_height=getattr(map_cfg, "obstacle_min_height", 0.25),
                 free_dilation_radius=getattr(map_cfg, "free_dilation_radius", 1),
-                occupied_dilation_radius=getattr(map_cfg, "occupied_dilation_radius", 0),
+                occupied_dilation_radius=getattr(
+                    map_cfg, "occupied_dilation_radius", 0
+                ),
             )
         except Exception as e:
             logger.warning("Failed to save scene raster map: {}", e)
@@ -325,7 +327,6 @@ class KeySGPipeline:
             for room in rooms
             for obj in room.objects
         ]
-        self._save_dsg_json()
 
     def _save_dsg_json(self) -> str:
         dsg_dir = os.path.join(self.output_dir, "dsg")
@@ -352,8 +353,65 @@ class KeySGPipeline:
         )
         return dsg_path
 
+    def rotation_matrix_to_quaternion(self, R):
+        """
+        输入:
+            R: 3x3 rotation matrix
+
+        返回:
+            (qw, qx, qy, qz)
+        """
+        R = np.asarray(R)
+
+        trace = np.trace(R)
+
+        if trace > 0:
+            s = 0.5 / np.sqrt(trace + 1.0)
+            qw = 0.25 / s
+            qx = (R[2, 1] - R[1, 2]) * s
+            qy = (R[0, 2] - R[2, 0]) * s
+            qz = (R[1, 0] - R[0, 1]) * s
+
+        elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
+            s = 2.0 * np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2])
+            qw = (R[2, 1] - R[1, 2]) / s
+            qx = 0.25 * s
+            qy = (R[0, 1] + R[1, 0]) / s
+            qz = (R[0, 2] + R[2, 0]) / s
+
+        elif R[1, 1] > R[2, 2]:
+            s = 2.0 * np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2])
+            qw = (R[0, 2] - R[2, 0]) / s
+            qx = (R[0, 1] + R[1, 0]) / s
+            qy = 0.25 * s
+            qz = (R[1, 2] + R[2, 1]) / s
+
+        else:
+            s = 2.0 * np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1])
+            qw = (R[1, 0] - R[0, 1]) / s
+            qx = (R[0, 2] + R[2, 0]) / s
+            qy = (R[1, 2] + R[2, 1]) / s
+            qz = 0.25 * s
+
+        return qw, qx, qy, qz
+
     def _object_node_to_dsg(self, node, index: int) -> Dict[str, Any]:
-        center, local_min, local_max = self._object_node_bounds(node)
+        if node.pcd and len(node.pcd.points) >= 4:
+            try:
+                obb = node.pcd.get_oriented_bounding_box()
+            except Exception:
+                obb = node.pcd.get_axis_aligned_bounding_box()
+        else:
+            obb = None
+        if obb is not None:
+            center = obb.center.tolist()
+            extent = obb.extent
+            local_min = (-extent / 2).tolist()
+            local_max = (extent / 2).tolist()
+            qw, qx, qy, qz = self.rotation_matrix_to_quaternion(obb.R)
+        else:
+            center, local_min, local_max = self._object_node_bounds(node)
+            qw, qx, qy, qz = 1, 0, 0, 0
         color = self._dsg_node_color(index)
         return {
             "attributes": {
@@ -363,10 +421,10 @@ class KeySGPipeline:
                     "type": "RAABB",
                     "world_P_center": center,
                     "world_R_center": {
-                        "w": 1.0,
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
+                        "w": qw,
+                        "x": qx,
+                        "y": qy,
+                        "z": qz,
                     },
                 },
                 "color": color,
@@ -656,6 +714,7 @@ class KeySGPipeline:
                 self.load_nodes()
             else:
                 self.run_node_extraction()
+            self._save_dsg_json()
 
         # Scene Description
         if getattr(self.cfg, "build_scene_description", True):
