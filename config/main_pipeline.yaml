@@ -8,7 +8,7 @@ dataset:
   depth_scale: 1000.0 # Depth image scaling factor (mm to meters)
   depth_min: 0.3 # Minimum valid depth value (meters)
   depth_max: 8.0 # Maximum valid depth value (meters)
-  downsample_stride: 1
+  downsample_stride: 5
 
 # Output directory for all pipeline results
 output_dir: output/keysg_rag1
@@ -67,7 +67,7 @@ nodes:
   use_keyframes_only: true # true: run detection on keyframes only (sparse_indices) | false: all dense frames subsampled by skip_frames
   skip_frames: 15 # Subsample stride when use_keyframes_only=false
   max_frames: 0 # Maximum frames per room (0 = use all available)
-  box_threshold: 0.5 # LLMDet box confidence threshold for object detection
+  box_threshold: 0.2 # LLMDet box confidence threshold for object detection
   post_hoc_iou_thresh: 0.05 # IoU threshold for post-processing merging
   post_hoc_sim_thresh: 0.65 # Similarity threshold for post-processing merging
   similarity_threshold: 0.5 # Geometric similarity threshold for node merging
@@ -77,7 +77,7 @@ nodes:
   # GroundingSAM2 configuration passed to NodesRepo
   gsam2:
     device: cpu # Device for GroundingSAM2/CLIP: null = auto, cuda, cpu, cuda:0, etc.
-    detection_mode: llmdet # llmdet | grounding_dino | owlv2
+    detection_mode: grounding_dino # llmdet | grounding_dino | owlv2
     sam2_checkpoint: ./checkpoints/sam2.1_hiera_large.pt
     sam2_model_config: sam2_configs/sam2.1/sam2.1_hiera_l.yaml
     # Backend-specific model IDs

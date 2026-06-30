@@ -766,9 +766,13 @@ class KeySGPipeline:
                 llmdet_model_id=cfg.get(
                     "llmdet_model_id", "iSEE-Laboratory/llmdet_large"
                 ),
+                grounding_model_id=cfg.get(
+                    "grounding_model_id", "IDEA-Research/grounding-dino-base"
+                ),
                 vlm_model=self.cfg.vlm.model,
                 device=cfg.get("device", None),
                 force_cpu=cfg.get("force_cpu", False),
+                text_threshold=cfg.get("text_threshold", 0.25),
             )
 
         total_labeled = 0

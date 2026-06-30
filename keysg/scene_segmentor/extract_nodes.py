@@ -128,7 +128,10 @@ class NodesRepo:
             logger.info("[NodesRepo] Loading GroundingSAM2...")
             gsam2_cfg = self.gsam2_config
             vlm_cfg = self.vlm_config
-            gsam_kwargs = self._build_gsam_kwargs(gsam2_cfg, vlm_cfg, "llmdet")
+            detection_mode = gsam2_cfg.get("detection_mode", "llmdet")
+            gsam_kwargs = self._build_gsam_kwargs(
+                gsam2_cfg, vlm_cfg, detection_mode
+            )
             NodesRepo._shared_segmentor = GroundingSAM2(**gsam_kwargs)
         self.gsam2 = NodesRepo._shared_segmentor
 
@@ -142,6 +145,7 @@ class NodesRepo:
     ) -> Dict[str, Any]:
         """Build kwargs for GroundingSAM2 initialization."""
         return {
+            "detection_mode": detection_mode,
             "sam2_checkpoint": gsam2_cfg.get(
                 "sam2_checkpoint", "./checkpoints/sam2.1_hiera_large.pt"
             ),
@@ -151,10 +155,14 @@ class NodesRepo:
             "llmdet_model_id": gsam2_cfg.get(
                 "llmdet_model_id", "iSEE-Laboratory/llmdet_large"
             ),
+            "grounding_model_id": gsam2_cfg.get(
+                "grounding_model_id", "IDEA-Research/grounding-dino-base"
+            ),
             "vlm_model": vlm_cfg.get("model", "deepseek-v4-flash"),
             "qa_method": vlm_cfg.get("qa_method", "responses_parse"),
             "device": gsam2_cfg.get("device", self.clip_config.get("device")),
             "force_cpu": gsam2_cfg.get("force_cpu", False),
+            "text_threshold": gsam2_cfg.get("text_threshold", 0.25),
         }
 
     def extract_initial_nodes(

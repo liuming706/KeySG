@@ -150,23 +150,29 @@ def _resolve_label_to_prompt_tag(
 
 
 class GroundingSAM2:
-    """SAM2 + LLMDet detection backend for object detection and segmentation."""
-
     def __init__(
         self,
         sam2_checkpoint: str,
         sam2_model_config: str,
-        llmdet_model_id: str,
+        llmdet_model_id: str = "iSEE-Laboratory/llmdet_large",
+        detection_mode: str = "llmdet",
+        grounding_model_id: Optional[str] = None,
         vlm_model: str = "deepseek-v4-flash",
         qa_method: str = "responses_parse",
         device: Optional[str] = None,
         force_cpu: bool = False,
         llmdet_max_tags_per_batch: int = 80,  # 30 会爆 8GB 显存
+        text_threshold: float = 0.25,
     ):
         self.sam2_checkpoint = sam2_checkpoint
         self.sam2_model_config = sam2_model_config
+        self.detection_mode = self._normalize_detection_mode(detection_mode)
         self.llmdet_model_id = llmdet_model_id or "iSEE-Laboratory/llmdet_large"
+        self.grounding_model_id = (
+            grounding_model_id or "IDEA-Research/grounding-dino-base"
+        )
         self.llmdet_max_tags_per_batch = llmdet_max_tags_per_batch
+        self.text_threshold = text_threshold
         self.vlm_model = vlm_model
         self.qa_method = qa_method
         print(f"vlm_model: {vlm_model}, qa_method: {qa_method}")
@@ -184,6 +190,15 @@ class GroundingSAM2:
         self._load_sam2()
         self._load_detection_model()
 
+    def _normalize_detection_mode(self, detection_mode: str) -> str:
+        mode = str(detection_mode or "llmdet").strip().lower()
+        if mode not in {"llmdet", "grounding_dino"}:
+            logger.warning(
+                "Unknown detection_mode={!r}; falling back to 'llmdet'", mode
+            )
+            return "llmdet"
+        return mode
+
     def _setup_environment(self):
         if torch.cuda.is_available():
             try:
@@ -200,10 +215,19 @@ class GroundingSAM2:
         self.sam2_predictor = SAM2ImagePredictor(sam2_model)
 
     def _load_detection_model(self):
-        self.llmdet_processor = AutoProcessor.from_pretrained(self.llmdet_model_id)
-        self.llmdet_model = AutoModelForZeroShotObjectDetection.from_pretrained(
-            self.llmdet_model_id
+        model_id = (
+            self.grounding_model_id
+            if self.detection_mode == "grounding_dino"
+            else self.llmdet_model_id
+        )
+        logger.info("Loading {} detector from {}", self.detection_mode, model_id)
+        self.detector_processor = AutoProcessor.from_pretrained(model_id)
+        self.detector_model = AutoModelForZeroShotObjectDetection.from_pretrained(
+            model_id
         ).to(self.device)
+        if self.detection_mode == "llmdet":
+            self.llmdet_processor = self.detector_processor
+            self.llmdet_model = self.detector_model
 
     def _ensure_vlm_client(self):
         if self._vlm_client is None:
@@ -238,9 +262,191 @@ class GroundingSAM2:
             raise ValueError("Image must be a file path, numpy array, or PIL Image")
 
         self.sam2_predictor.set_image(np.array(pil_image.convert("RGB")))
+        if self.detection_mode == "grounding_dino":
+            return self._predict_grounding_dino(
+                pil_image, text_prompt, box_threshold, multimask_output
+            )
         return self._predict_llmdet(
             pil_image, text_prompt, box_threshold, multimask_output
         )
+
+    def _empty_detection_result(self, pil_image: Image.Image) -> Dict[str, Any]:
+        return {
+            "boxes": np.array([]).reshape(0, 4),
+            "masks": np.array([]).reshape(0, pil_image.height, pil_image.width),
+            "scores": np.array([]),
+            "labels": [],
+            "class_ids": np.array([]),
+            "image_size": pil_image.size,
+        }
+
+    def _prepare_grounding_dino_prompt(self, text_prompt: str) -> str:
+        tags = [p.strip().lower() for p in text_prompt.split(".") if p.strip()]
+        if not tags:
+            return ""
+        return ". ".join(tags) + "."
+
+    def _post_process_grounding_outputs(
+        self,
+        outputs: Any,
+        inputs: Any,
+        box_threshold: float,
+        target_sizes: Any,
+    ) -> List[Dict[str, Any]]:
+        try:
+            return self.detector_processor.post_process_grounded_object_detection(
+                outputs=outputs,
+                input_ids=inputs.input_ids,
+                threshold=box_threshold,
+                text_threshold=self.text_threshold,
+                target_sizes=target_sizes,
+            )
+        except TypeError:
+            return self.detector_processor.post_process_grounded_object_detection(
+                outputs=outputs,
+                threshold=box_threshold,
+                text_threshold=self.text_threshold,
+                target_sizes=target_sizes,
+            )
+
+    def _predict_grounding_dino(
+        self,
+        pil_image: Image.Image,
+        text_prompt: str,
+        box_threshold: float,
+        multimask_output: bool,
+    ) -> Dict[str, Any]:
+
+        logger.info("=" * 80)
+        logger.info("Grounding DINO Prediction")
+        logger.info(f"text_prompt={text_prompt}")
+        logger.info(f"box_threshold={box_threshold}")
+        logger.info(f"image_size={pil_image.size}")
+
+        caption = self._prepare_grounding_dino_prompt(text_prompt)
+
+        logger.info(f"prepared caption: {caption}")
+
+        if not caption:
+            logger.warning("Caption is empty.")
+            return self._empty_detection_result(pil_image)
+
+        ####################################################################
+        # Processor
+        ####################################################################
+        inputs = self.detector_processor(
+            images=pil_image,
+            text=caption,
+            return_tensors="pt",
+        ).to(self.device)
+
+        logger.info("Processor finished.")
+        logger.info(f"input_ids shape = {inputs['input_ids'].shape}")
+
+        ####################################################################
+        # Detector
+        ####################################################################
+        with torch.no_grad():
+            outputs = self.detector_model(**inputs)
+
+        logger.info("Detector inference finished.")
+
+        logger.info(f"logits shape = {outputs.logits.shape}")
+        logger.info(f"pred_boxes shape = {outputs.pred_boxes.shape}")
+
+        ####################################################################
+        # Post Process
+        ####################################################################
+        target_sizes = torch.tensor(
+            [pil_image.size[::-1]],
+            device=self.device,
+        )
+
+        detection_results = self._post_process_grounding_outputs(
+            outputs,
+            inputs,
+            box_threshold,
+            target_sizes,
+        )
+
+        logger.info(f"detection_results length = {len(detection_results)}")
+
+        if len(detection_results):
+            r = detection_results[0]
+
+            logger.info(f"num boxes = {len(r['boxes'])}")
+            logger.info(f"scores = {r['scores']}")
+
+            if "text_labels" in r:
+                logger.info(f"text_labels = {r['text_labels']}")
+
+            if "labels" in r:
+                logger.info(f"labels = {r['labels']}")
+
+        ####################################################################
+        # Empty Detection
+        ####################################################################
+        if not detection_results or len(detection_results[0]["boxes"]) == 0:
+            logger.warning("No box detected.")
+            return self._empty_detection_result(pil_image)
+
+        result0 = detection_results[0]
+
+        input_boxes = result0["boxes"].detach().cpu().numpy()
+
+        confidences = result0["scores"].detach().cpu().numpy()
+
+        raw_labels = result0.get("text_labels", None)
+        if raw_labels is None:
+            raw_labels = result0.get("labels", [])
+
+        if hasattr(raw_labels, "detach"):
+            raw_labels = raw_labels.detach().cpu().tolist()
+
+        class_names = [str(label).strip() for label in raw_labels]
+
+        logger.info(f"boxes = {input_boxes}")
+        logger.info(f"scores = {confidences}")
+        logger.info(f"class_names = {class_names}")
+
+        ####################################################################
+        # SAM2
+        ####################################################################
+        logger.info("Running SAM2...")
+
+        masks, sam_scores, logits = self.sam2_predictor.predict(
+            point_coords=None,
+            point_labels=None,
+            box=input_boxes,
+            multimask_output=multimask_output,
+        )
+
+        logger.info(f"masks shape = {masks.shape}")
+        logger.info(f"sam_scores shape = {sam_scores.shape}")
+
+        if masks.ndim == 4:
+            masks = masks.squeeze(1)
+
+        logger.info(f"masks shape(after squeeze) = {masks.shape}")
+
+        masks = mask_subtract_contained(
+            input_boxes,
+            masks.astype(bool),
+        )
+
+        logger.info(f"valid masks = {[m.sum() for m in masks]}")
+
+        logger.info("Prediction finished.")
+        logger.info("=" * 80)
+
+        return {
+            "boxes": input_boxes,
+            "masks": masks.astype(bool),
+            "scores": confidences,
+            "labels": class_names,
+            "class_ids": np.arange(len(class_names), dtype=int),
+            "image_size": pil_image.size,
+        }
 
     def _predict_llmdet(
         self,
