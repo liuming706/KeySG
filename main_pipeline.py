@@ -10,6 +10,10 @@ import pickle
 import re
 import shutil
 from typing import Any, Dict, List, Optional
+from collections import Counter
+from ram import inference_ram
+from ram.models import ram_plus
+import torchvision.transforms as transforms
 
 # KeySG is primarily a batch/CLI pipeline.  Force Matplotlib to use a
 # non-interactive backend before any module imports ``matplotlib.pyplot``.
@@ -89,11 +93,40 @@ class KeySGPipeline:
 
         self._save_config()
         self._setup_logging()
+
         self.scene_descriptor = SceneDescriptor(
             dataset=self.dataset,
             output_dir=self.output_dir,
             vlm_config=getattr(self.cfg, "vlm", None),
         )
+        if self.cfg.nodes.object_tags == "ram" and self.cfg.build_object_node == True:
+            self.ram_model = ram_plus(
+                pretrained=self.cfg.nodes.gsam2.ram_pretrained,
+                image_size=self.cfg.nodes.gsam2.ram_image_size,
+                vit=self.cfg.nodes.gsam2.ram_vit,
+            )
+            self.ram_model.eval()
+            self.ram_model.to(self.cfg.nodes.gsam2.device)
+            self.ram_transform = transforms.Compose(
+                [
+                    transforms.Resize(
+                        (
+                            self.cfg.nodes.gsam2.ram_image_size,
+                            self.cfg.nodes.gsam2.ram_image_size,
+                        )
+                    ),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=(0.485, 0.456, 0.406),
+                        std=(0.229, 0.224, 0.225),
+                    ),
+                ]
+            )
+            logger.info(
+                "Loaded ram model {} to {}",
+                self.cfg.nodes.gsam2.ram_pretrained,
+                self.cfg.nodes.gsam2.device,
+            )
 
     def _save_config(self) -> None:
         """Save a copy of the run config to the output directory."""
@@ -533,46 +566,109 @@ class KeySGPipeline:
 
     def _get_room_tags(self, rid: str, fid: str) -> List[str]:
         """Load or generate room tags."""
+
         room_dir = os.path.join(
-            self.output_dir, "segmentation", f"floor_{fid}", f"room_{rid}"
+            self.output_dir,
+            "segmentation",
+            f"floor_{fid}",
+            f"room_{rid}",
         )
+
         tags_path = os.path.join(room_dir, "object_tags.json")
+
         object_tags_method = str(getattr(self.cfg.nodes, "object_tags", "")).lower()
 
+        # --------------------
+        # COCO
+        # --------------------
         if object_tags_method == "coco":
             coco_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "config", "coco.txt"
+                os.path.dirname(os.path.abspath(__file__)),
+                "config",
+                "coco.txt",
             )
+
             with open(coco_path, "r", encoding="utf-8") as f:
                 tags = [line.strip() for line in f if line.strip()]
+
             os.makedirs(room_dir, exist_ok=True)
+
             with open(tags_path, "w", encoding="utf-8") as f:
                 json.dump({"tags": tags}, f)
+
             return tags
 
-        if os.path.exists(tags_path) and object_tags_method == "vlm":
+        # --------------------
+        # 已缓存
+        # --------------------
+        if os.path.exists(tags_path) and object_tags_method in ("vlm", "ram"):
             with open(tags_path, "r", encoding="utf-8") as f:
                 return json.load(f).get("tags", [])
 
-        if object_tags_method == "vlm":
-            room = next(
-                (
-                    r
-                    for _, rooms in self.floor_rooms
-                    for r in rooms
-                    if getattr(r, "id", None) == rid
-                ),
-                None,
-            )
-            if room:
-                tags_dict = asyncio.run(self.scene_descriptor.tag_rooms([room]))
-                tags = tags_dict.get(rid, [])
-                os.makedirs(room_dir, exist_ok=True)
-                with open(tags_path, "w", encoding="utf-8") as f:
-                    json.dump({"tags": list(tags)}, f)
-                return tags
+        # 找到 room
+        room = next(
+            (
+                r
+                for _, rooms in self.floor_rooms
+                for r in rooms
+                if getattr(r, "id", None) == rid
+            ),
+            None,
+        )
 
-        return []
+        if room is None:
+            return []
+
+        # --------------------
+        # VLM
+        # --------------------
+        if object_tags_method == "vlm":
+            tags_dict = asyncio.run(self.scene_descriptor.tag_rooms([room]))
+            tags = list(tags_dict.get(rid, []))
+
+        # --------------------
+        # RAM
+        # --------------------
+        elif object_tags_method == "ram":
+            tags = self._tag_room_with_ram(room)
+            logger.info("tag with ram method of room_{}: {} ", rid, tags)
+        else:
+            return []
+
+        os.makedirs(room_dir, exist_ok=True)
+
+        with open(tags_path, "w", encoding="utf-8") as f:
+            json.dump({"tags": tags}, f)
+
+        return tags
+
+    def _tag_room_with_ram(self, room):
+
+        counter = Counter()
+        images, room_ids = self.scene_descriptor._collect_room_images([room])
+        for image in images:
+            resize_image = image.resize(
+                (
+                    self.cfg.nodes.gsam2.ram_image_size,
+                    self.cfg.nodes.gsam2.ram_image_size,
+                )
+            )
+            resize_image = (
+                self.ram_transform(resize_image)
+                .unsqueeze(0)
+                .to(self.cfg.nodes.gsam2.device)
+            )
+            tags, _ = inference_ram(
+                resize_image,
+                self.ram_model,
+            )
+
+            if isinstance(tags, str):
+                tags = [t.strip() for t in tags.split("|") if t.strip()]
+
+            counter.update(tags)
+
+        return [tag for tag, _ in counter.most_common(100)]
 
     def _extract_nodes_for_room(
         self,

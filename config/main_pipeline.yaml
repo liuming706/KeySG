@@ -8,7 +8,7 @@ dataset:
   depth_scale: 1000.0 # Depth image scaling factor (mm to meters)
   depth_min: 0.3 # Minimum valid depth value (meters)
   depth_max: 8.0 # Maximum valid depth value (meters)
-  downsample_stride: 5
+  downsample_stride: 1
 
 # Output directory for all pipeline results
 output_dir: output/keysg_rag1
@@ -60,7 +60,7 @@ scene_map:
 build_object_node: true
 nodes:
   segmentor: gsam2 # Segmentation backend
-  object_tags: coco # Method for object tags: 'vlm' (vision-language model), 'ram' (RAM++ tagger), or 'coco' (config/coco.txt)
+  object_tags: ram # Method for object tags: 'vlm' (vision-language model), 'ram' (RAM++ tagger), or 'coco' (config/coco.txt)
   extract_functional_elements: false # Enable/disable functional element extraction
   functional_elements_method: sparse_tags # Method for functional elements: 'sparse_tags' or 'detector' (funGraph model) or 'dense_tags' (per object vlm tags)
   fun_tags: "" # Optional fixed functional element tags (empty = use VLM tagging)
@@ -87,6 +87,7 @@ nodes:
     # RAM tagger (used to auto-generate prompts when tags are empty)
     ram_pretrained: ./checkpoints/ram_plus_swin_large_14m.pth
     ram_image_size: 384
+    ram_vit: swin_l
   # Functional elements detector (FunGraph)
   fungraph_checkpoint: ./checkpoints/fungraph_det.pt
   # Per-object descriptions: keyframe extraction always runs (free); VLM overwrite is optional
