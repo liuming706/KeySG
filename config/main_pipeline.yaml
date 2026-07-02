@@ -65,7 +65,7 @@ nodes:
   functional_elements_method: sparse_tags # Method for functional elements: 'sparse_tags' or 'detector' (funGraph model) or 'dense_tags' (per object vlm tags)
   fun_tags: "" # Optional fixed functional element tags (empty = use VLM tagging)
   use_keyframes_only: true # true: run detection on keyframes only (sparse_indices) | false: all dense frames subsampled by skip_frames
-  skip_frames: 15 # Subsample stride when use_keyframes_only=false
+  skip_frames: 9 # Subsample stride when use_keyframes_only=false
   max_frames: 0 # Maximum frames per room (0 = use all available)
   box_threshold: 0.3 # LLMDet box confidence threshold for object detection
   post_hoc_iou_thresh: 0.05 # IoU threshold for post-processing merging

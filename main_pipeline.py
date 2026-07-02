@@ -374,7 +374,7 @@ class KeySGPipeline:
         if pcd is None or len(pcd.points) < 20:
             return False
         center, local_min, local_max = self._object_node_bounds(node)
-        if center[2] < -1.0:
+        if center[2] < -1.5:
             return False
         if math.dist(local_min, local_max) > 3.0:
             return False
@@ -879,7 +879,7 @@ class KeySGPipeline:
                 self.load_nodes()
             else:
                 self.run_node_extraction()
-            self._save_dsg_json()
+        self._save_dsg_json()
 
         # Scene Description
         if getattr(self.cfg, "build_scene_description", True):
