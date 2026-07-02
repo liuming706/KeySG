@@ -8,6 +8,8 @@ import json
 import os
 import pickle
 import re
+import math
+import open3d as o3d
 import shutil
 from typing import Any, Dict, List, Optional
 from collections import Counter
@@ -361,6 +363,24 @@ class KeySGPipeline:
             for obj in room.objects
         ]
 
+    def _keep_object(self, node):
+        _EXCLUDE = {"wall", "floor", "ceiling", "light"}
+        label = (getattr(node, "label", "") or "").lower()
+        if not str(label).strip():
+            return False
+        if any(e in label for e in _EXCLUDE):
+            return False
+        pcd = getattr(node, "pcd", None)
+        if pcd is None or len(pcd.points) < 20:
+            return False
+        center, local_min, local_max = self._object_node_bounds(node)
+        if center[2] < -1.0:
+            return False
+        if math.dist(local_min, local_max) > 3.0:
+            return False
+
+        return True
+
     def _save_dsg_json(self) -> str:
         dsg_dir = os.path.join(self.output_dir, "dsg")
         os.makedirs(dsg_dir, exist_ok=True)
@@ -376,6 +396,7 @@ class KeySGPipeline:
             "nodes": [
                 self._object_node_to_dsg(node, i)
                 for i, node in enumerate(self.object_nodes)
+                if self._keep_object(node)
             ],
         }
 
@@ -428,10 +449,50 @@ class KeySGPipeline:
 
         return qw, qx, qy, qz
 
+    def compute_ground_plane_obb(self, pcd):
+        pts = np.asarray(pcd.points)
+
+        # 1. XY plane PCA (yaw)
+        xy = pts[:, :2]
+        xy_mean = xy.mean(axis=0)
+        xy_centered = xy - xy_mean
+
+        cov = xy_centered.T @ xy_centered
+        eigvals, eigvecs = np.linalg.eigh(cov)
+
+        direction = eigvecs[:, np.argmax(eigvals)]
+        direction /= np.linalg.norm(direction)
+
+        yaw = np.arctan2(direction[1], direction[0])
+
+        # 2. Rotation (Z-up)
+        c, s = np.cos(yaw), np.sin(yaw)
+
+        R = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+
+        # 3. rotate points
+        pts_rot = (R.T @ pts.T).T
+
+        min_pt = pts_rot.min(axis=0)
+        max_pt = pts_rot.max(axis=0)
+
+        extent = max_pt - min_pt
+        center_local = (min_pt + max_pt) / 2
+        center = R @ center_local
+
+        # 4. build OBB
+        obb = o3d.geometry.OrientedBoundingBox()
+        obb.center = center
+        obb.R = R
+        obb.extent = extent
+
+        return obb
+
     def _object_node_to_dsg(self, node, index: int) -> Dict[str, Any]:
         if node.pcd and len(node.pcd.points) >= 4:
             try:
-                obb = node.pcd.get_oriented_bounding_box()
+                # obb = node.pcd.get_oriented_bounding_box()
+                obb = self.compute_ground_plane_obb(node.pcd)
             except Exception:
                 obb = node.pcd.get_axis_aligned_bounding_box()
         else:
@@ -441,6 +502,14 @@ class KeySGPipeline:
             extent = obb.extent
             local_min = (-extent / 2).tolist()
             local_max = (extent / 2).tolist()
+            # yaw = np.arctan2(obb.R[1, 0], obb.R[0, 0])
+            # obb.R = np.array(
+            #     [
+            #         [np.cos(yaw), -np.sin(yaw), 0.0],
+            #         [np.sin(yaw), np.cos(yaw), 0.0],
+            #         [0.0, 0.0, 1.0],
+            #     ]
+            # )
             qw, qx, qy, qz = self.rotation_matrix_to_quaternion(obb.R)
         else:
             center, local_min, local_max = self._object_node_bounds(node)

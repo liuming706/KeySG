@@ -1027,14 +1027,17 @@ class KeySGVisualizer:
             self._room_handles[rid] = handle
 
     def _add_objects(self, color_mode: Optional[str] = None) -> None:
-        #  _EXCLUDE = {"wall", "floor", "ceiling", "light"}
-        _EXCLUDE = {}
+        _EXCLUDE = {"wall", "floor", "ceiling", "light"}
+        # _EXCLUDE = {}
         palette = _palette(max(len(self.objects), 1))
         mode = color_mode if color_mode is not None else self._color_mode
 
         for i, obj in enumerate(self.objects):
             label = (getattr(obj, "label", "") or "").lower()
+            logger.info("object label: {}", label)
             if any(e in label for e in _EXCLUDE):
+                continue
+            if not str(label).strip():
                 continue
             pcd = getattr(obj, "pcd", None)
             if pcd is None or len(pcd.points) < 20:

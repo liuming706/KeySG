@@ -429,6 +429,25 @@ class GroundingSAM2:
 
         logger.info(f"masks shape(after squeeze) = {masks.shape}")
 
+        # Resize masks to original image dimensions if needed
+        # SAM2 outputs masks at its internal resolution, not the input image resolution
+        target_h, target_w = pil_image.height, pil_image.width
+        if masks.shape[-2] != target_h or masks.shape[-1] != target_w:
+            logger.info(
+                "Resizing SAM2 masks from {}x{} to {}x{}",
+                masks.shape[-2], masks.shape[-1], target_h, target_w
+            )
+            masks_resized = np.stack([
+                cv2.resize(
+                    m.astype(np.uint8),
+                    (target_w, target_h),
+                    interpolation=cv2.INTER_NEAREST
+                )
+                for m in masks
+            ])
+            masks = masks_resized
+            logger.info(f"masks shape(after resize) = {masks.shape}")
+
         masks = mask_subtract_contained(
             input_boxes,
             masks.astype(bool),
@@ -711,6 +730,24 @@ class GroundingSAM2:
 
         if masks.ndim == 4:
             masks = masks.squeeze(1)
+
+        # Resize masks to original image dimensions if needed
+        # SAM2 outputs masks at its internal resolution, not the input image resolution
+        target_h, target_w = pil_image.height, pil_image.width
+        if masks.shape[-2] != target_h or masks.shape[-1] != target_w:
+            logger.debug(
+                "Resizing SAM2 masks from {}x{} to {}x{}",
+                masks.shape[-2], masks.shape[-1], target_h, target_w
+            )
+            masks_resized = np.stack([
+                cv2.resize(
+                    m.astype(np.uint8),
+                    (target_w, target_h),
+                    interpolation=cv2.INTER_NEAREST
+                )
+                for m in masks
+            ])
+            masks = masks_resized
 
         masks = mask_subtract_contained(input_boxes, masks.astype(bool))
 

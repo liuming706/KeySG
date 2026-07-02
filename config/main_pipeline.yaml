@@ -7,7 +7,7 @@ dataset:
   root_dir: /mnt/ssd2/datasets/SIR/Demo/kitchen_1fps_da3 # Example ScanNet scene path
   depth_scale: 1000.0 # Depth image scaling factor (mm to meters)
   depth_min: 0.3 # Minimum valid depth value (meters)
-  depth_max: 8.0 # Maximum valid depth value (meters)
+  depth_max: 4.0 # Maximum valid depth value (meters)
   downsample_stride: 1
 
 # Output directory for all pipeline results
@@ -27,7 +27,7 @@ load:
 # Vision-language model configuration for room descriptions
 vlm:
   provider: openai # openai | ollama
-  model: Qwen/Qwen3-VL-8B-Instruct # qwen3.7-plus # OpenAI model or Ollama model name (e.g., Qwen/Qwen3-VL-8B-Instruct)
+  model: qwen3-vl-235b-a22b-instruct # qwen3.7-plus # OpenAI model or Ollama model name (e.g., Qwen/Qwen3-VL-8B-Instruct)
   # text_model: sensenova-6.7-flash-lite  # Optional separate model for text-only summarization
   qa_method: responses_parse # QA method: responses_parse (OpenAI Responses API) | chat (Chat Completions API)
 
@@ -40,7 +40,7 @@ segmentation:
   sampling_eps: 0.001 # DBSCAN epsilon parameter for clustering [Keyframe sampling]
   sampling_min_samples: 2 # DBSCAN minimum samples per cluster [Keyframe sampling]
   sampling_rot_weight: 1.5 # Weight for rotation in pose sampling distance [Keyframe sampling]
-  sampling_min_cluster_size: 7 # HDBSCAN minimum cluster size for keyframe sampling
+  sampling_min_cluster_size: 5 # HDBSCAN minimum cluster size for keyframe sampling
   sampling_method: hdbscan # Keyframe sampling method: 'hdbscan' or 'rot_trans'
   rot_angle_thresh: 30.0 # Rotation angle threshold (degrees) for rot_trans keyframe sampling
   trans_dist_thresh: 0.5 # Translation distance threshold (meters) for rot_trans keyframe sampling
@@ -60,14 +60,14 @@ scene_map:
 build_object_node: true
 nodes:
   segmentor: gsam2 # Segmentation backend
-  object_tags: ram # Method for object tags: 'vlm' (vision-language model), 'ram' (RAM++ tagger), or 'coco' (config/coco.txt)
+  object_tags: coco # Method for object tags: 'vlm' (vision-language model), 'ram' (RAM++ tagger), or 'coco' (config/coco.txt)
   extract_functional_elements: false # Enable/disable functional element extraction
   functional_elements_method: sparse_tags # Method for functional elements: 'sparse_tags' or 'detector' (funGraph model) or 'dense_tags' (per object vlm tags)
   fun_tags: "" # Optional fixed functional element tags (empty = use VLM tagging)
   use_keyframes_only: true # true: run detection on keyframes only (sparse_indices) | false: all dense frames subsampled by skip_frames
   skip_frames: 15 # Subsample stride when use_keyframes_only=false
   max_frames: 0 # Maximum frames per room (0 = use all available)
-  box_threshold: 0.2 # LLMDet box confidence threshold for object detection
+  box_threshold: 0.3 # LLMDet box confidence threshold for object detection
   post_hoc_iou_thresh: 0.05 # IoU threshold for post-processing merging
   post_hoc_sim_thresh: 0.65 # Similarity threshold for post-processing merging
   similarity_threshold: 0.5 # Geometric similarity threshold for node merging
@@ -77,7 +77,7 @@ nodes:
   # GroundingSAM2 configuration passed to NodesRepo
   gsam2:
     device: cpu # Device for GroundingSAM2/CLIP: null = auto, cuda, cpu, cuda:0, etc.
-    detection_mode: grounding_dino # llmdet | grounding_dino | owlv2
+    detection_mode: llmdet # llmdet | grounding_dino | owlv2
     sam2_checkpoint: ./checkpoints/sam2.1_hiera_large.pt
     sam2_model_config: sam2_configs/sam2.1/sam2.1_hiera_l.yaml
     # Backend-specific model IDs

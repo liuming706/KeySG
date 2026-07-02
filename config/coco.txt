@@ -1,19 +1,15 @@
-counter
-window
 robot
-light
+ceiling lamp
 pedestal
 stanchion
 monitor
 pipe
 wall
-mannequin
 display
 shelf
 poster
 bench
 partition
-doorway
 clothing
 picture
 screen
@@ -23,16 +19,20 @@ column
 table
 door
 chair
+desk
 ball
 cabinet
 panel
 curtain
+garbage can
 railing
 display case
 sculpture
 statue
 floor
 sign
-desk
+wheeled robot
+service robot
 humanoid robot
-curved digital display screen
+display screen
+person
