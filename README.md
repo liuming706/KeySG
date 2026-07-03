@@ -136,6 +136,8 @@ keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh --model Qwen
 keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh --model qwen3.7-plus  --hide-roofs --roof-margin 2.0 --qa-method chat
 keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh_qiyu --model qwen3.7-plus  --hide-roofs --roof-margin 2.0 --qa-method chat
 keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh_z_up --model qwen3.7-plus  --hide-roofs --roof-margin 2.0 --qa-method chat
+keysg-vis --scene_dir output/keysg_rag1/Replica/merged_from_gs_mesh_z_up --model Qwen/Qwen3-VL-8B-Instruct  --hide-roofs --roof-margin 2.0 --qa-method chat
+
 keysg-vis --scene_dir output/keysg_rag1/Replica/webots --model qwen3.7-plus  --hide-roofs --roof-margin 2.0 --qa-method chat
 
 

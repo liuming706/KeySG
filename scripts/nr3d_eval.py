@@ -283,8 +283,8 @@ def _run_keysg_rag(
         # anchor_vis = _fuse_obj_results(anchor_results, top_k_objects)
         # target_vis = target_results.get("text", [])
         # anchor_vis = anchor_results.get("text", [])
-        target_vis = target_results.get("object_visual", [])
-        anchor_vis = anchor_results.get("object_visual", [])
+        target_vis = target_results.get("object_visual", []) or target_results.get("text", [])
+        anchor_vis = anchor_results.get("object_visual", []) or anchor_results.get("text", [])
 
         sections = [
             f"USER QUERY: {utterance}",

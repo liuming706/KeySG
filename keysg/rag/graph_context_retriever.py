@@ -54,7 +54,7 @@ except ImportError:
         )
     except ImportError:
         SentenceTransformerEmbedding = None  # type: ignore
-        _DEFAULT_EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # type: ignore
+        _DEFAULT_EMBED_MODEL = "BAAI/bge-base-zh-v1.5"  # type: ignore
 
 # Import utilities - handle both installed package and direct execution scenarios
 try:
@@ -107,7 +107,7 @@ class GraphContextRetriever:
         self.gpt = None
         self.clip = None
         self.clip_model_id: Optional[str] = None
-        
+
         # QA method for LLM API
         self.qa_method = qa_method
 
@@ -160,7 +160,7 @@ class GraphContextRetriever:
         if self.floor_summaries or self.room_vlm:
             logger.info("Scene description files already loaded")
             return
-        (self.floor_summaries, self.room_vlm, self.room_index_paths) = (
+        self.floor_summaries, self.room_vlm, self.room_index_paths = (
             load_scene_description(self.output_dir)
         )
 
@@ -183,7 +183,7 @@ class GraphContextRetriever:
 
     def compute_embeddings(
         self,
-        model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+        model_name: str = _DEFAULT_EMBED_MODEL,
         use_cache: bool = True,
         compute_frame_visual: bool = True,
         compute_object_visual: bool = True,
@@ -202,6 +202,8 @@ class GraphContextRetriever:
         """
         if not self.chunks:
             self.build_chunks()
+
+        model_name = model_name or _DEFAULT_EMBED_MODEL
 
         if use_cache and self._load_cached_embeddings(model_name):
             if compute_frame_visual:
@@ -293,11 +295,15 @@ class GraphContextRetriever:
             meta_ids = [rec.get("id") for rec in meta_chunks]
             chunk_ids = [c.id for c in self.chunks]
             if meta_ids != chunk_ids:
-                logger.info("Cached embedding chunk identity/order mismatch; recomputing.")
+                logger.info(
+                    "Cached embedding chunk identity/order mismatch; recomputing."
+                )
                 return False
             meta_hashes = [rec.get("content_hash") for rec in meta_chunks]
             if any(h is None for h in meta_hashes):
-                logger.info("Cached embeddings missing chunk content hashes; recomputing.")
+                logger.info(
+                    "Cached embeddings missing chunk content hashes; recomputing."
+                )
                 return False
             chunk_hashes = [_chunk_content_hash(c) for c in self.chunks]
             if meta_hashes != chunk_hashes:
@@ -314,6 +320,9 @@ class GraphContextRetriever:
                 return False
             self.embeddings = emb
             self.embed_model_name = model_name
+            self.embedder_is_local = (
+                meta.get("embedding_backend") == "sentence-transformers"
+            )
             logger.info(
                 "Loaded cached embeddings with shape {} (model: {})",
                 self.embeddings.shape,
@@ -347,7 +356,7 @@ class GraphContextRetriever:
         if use_cache and os.path.exists(self.index_path):
             try:
                 idx = faiss.read_index(self.index_path)
-                if idx.ntotal == len(self.chunks):
+                if idx.ntotal == len(self.chunks) and idx.d == d:
                     self.index = idx
                     logger.info("Loaded cached FAISS index ({} vectors)", idx.ntotal)
                     return
@@ -518,7 +527,7 @@ class GraphContextRetriever:
             # embedding model is a sentence-transformers model.
             preferred_model = self.embed_model_name or _DEFAULT_EMBED_MODEL
             prefer_local = self.embedder_is_local or (preferred_model or "").startswith(
-                "sentence-transformers/"
+                ("sentence-transformers/", "BAAI/")
             )
 
             if prefer_local:
@@ -526,10 +535,11 @@ class GraphContextRetriever:
 
             if self.embedder_is_local and self.embedder is not None:
                 # print("DEBUG:4.4.1")
+                logger.info("embedder_is_local: {}", self.embedder_is_local)
                 q_emb = prepare_text_query(
                     None,
                     query,
-                    preferred_model or "sentence-transformers/all-MiniLM-L6-v2",
+                    preferred_model or _DEFAULT_EMBED_MODEL,
                     embedder=self.embedder,
                 )
             else:
@@ -539,6 +549,7 @@ class GraphContextRetriever:
                     self.gpt, query, self.embed_model_name or "text-embedding-3-small"
                 )
             text_results = self.index.search(q_emb, k_search)  # type: ignore
+            # logger.info("text_results: {}", text_results)
         # print("DEBUG:4.5")
         # Visual search (frames & objects) via CLIP text query embedding (compute once if needed)
         frame_visual_results: Optional[Tuple[np.ndarray, np.ndarray]] = None
@@ -588,6 +599,7 @@ class GraphContextRetriever:
             results[mod] = [
                 SearchResult(chunk=self.chunks[idx], score=score) for idx, score in res
             ]
+        # logger.info("results: {}", results)
         return results
 
     # ------------------------------------------------------------------
@@ -614,17 +626,15 @@ class GraphContextRetriever:
                 indices = meta.get("object_chunk_indices", [])
                 shape_ok = bool(indices) and emb.shape[0] == len(indices)
                 ids_ok = chunks_ok and all(
-                    0 <= idx < len(self.chunks) and self.chunks[idx].doc_type == "object"
+                    0 <= idx < len(self.chunks)
+                    and self.chunks[idx].doc_type == "object"
                     for idx in indices
                 )
                 cached_chunk_ids = meta.get("object_chunk_ids") or []
                 chunk_ids_ok = (
                     bool(cached_chunk_ids)
                     and len(cached_chunk_ids) == len(indices)
-                    and [
-                        self.chunks[idx].id
-                        for idx in indices
-                    ] == cached_chunk_ids
+                    and [self.chunks[idx].id for idx in indices] == cached_chunk_ids
                 )
                 if chunks_ok and shape_ok and ids_ok and chunk_ids_ok:
                     self.object_visual_embeddings = emb
@@ -732,7 +742,8 @@ class GraphContextRetriever:
                         "total_chunks": len(self.chunks),
                         "object_chunk_indices": self.object_visual_chunk_indices,
                         "object_chunk_ids": [
-                            self.chunks[idx].id for idx in self.object_visual_chunk_indices
+                            self.chunks[idx].id
+                            for idx in self.object_visual_chunk_indices
                         ],
                     },
                     f,

@@ -7,9 +7,7 @@ from typing import Any, Dict, List, Optional, Union
 import numpy as np
 from loguru import logger
 
-# Default model - high quality and free
-DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-# Alternative: "sentence-transformers/all-mpnet-base-v2" (better quality, slower)
+DEFAULT_MODEL = "BAAI/bge-base-zh-v1.5"
 
 
 class SentenceTransformerEmbedding:
@@ -45,7 +43,10 @@ class SentenceTransformerEmbedding:
                     "Install with: pip install sentence-transformers"
                 )
 
-            logger.info("Loading sentence-transformer model: {}", self.model_name)
+            logger.info(
+                "Loading sentence-transformer model: {}",
+                self.model_name,
+            )
             self._model = SentenceTransformer(
                 self.model_name,
                 device=self._device,
@@ -152,7 +153,6 @@ def create_embedding_model(
         SentenceTransformerEmbedding instance
     """
     if model_name is None:
-        # Map from old OpenAI model names to sentence-transformer equivalents
         model_name = DEFAULT_MODEL
 
     return SentenceTransformerEmbedding(

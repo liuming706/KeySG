@@ -850,10 +850,11 @@ class KeySGPipeline:
             try:
                 self.keysg_graph.build_rag_database(
                     embedding_model=getattr(
-                        rag_cfg, "embedding_model", "text-embedding-3-small"
+                        rag_cfg, "embedding_model", "BAAI/bge-base-zh-v1.5"
                     ),
                     compute_visual=getattr(rag_cfg, "compute_visual_embeddings", True),
                     use_cache=getattr(rag_cfg, "use_cache", True),
+                    use_local_embedder=getattr(rag_cfg, "use_local_embedder", True),
                 )
                 logger.info("KeySG graph with RAG built successfully")
             except Exception as e:

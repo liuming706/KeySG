@@ -192,7 +192,7 @@ class KeySGGraph:
 
     def build_rag_database(
         self,
-        embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+        embedding_model: str = "BAAI/bge-base-zh-v1.5",
         compute_visual: bool = True,
         use_cache: bool = True,
         use_local_embedder: bool = True,

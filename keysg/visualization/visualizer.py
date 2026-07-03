@@ -374,7 +374,7 @@ def _run_grounding_query(
         doc_types=["object"],
         object_modality="both",
     )
-    target_vis = target_results.get("object_visual", [])
+    target_vis = target_results.get("object_visual", []) or target_results.get("text", [])
     # print("DEBUG:5")
     anchor_vis: List = []
     if anchor_objects:
@@ -385,7 +385,7 @@ def _run_grounding_query(
             doc_types=["object"],
             object_modality="both",
         )
-        anchor_vis = anchor_results.get("object_visual", [])
+        anchor_vis = anchor_results.get("object_visual", []) or anchor_results.get("text", [])
 
     # Frame retrieval (same as nr3d_eval)
     chunk_map = {c.id: c for c in retriever.chunks}
@@ -442,7 +442,7 @@ def _run_grounding_query(
 
         context_text = "\n\n".join(sections)
         frame_images = _load_frame_images(top_frame_chunks, max_frame_images)
-
+        logger.info("context_text: {}", context_text)
         # Phase 4: LLM selection
         try:
             sel = gpt.structured_prompt(
@@ -718,7 +718,7 @@ def _run_open_qa(
         doc_types=["object"],
         object_modality="both",
     )
-    target_vis = target_results.get("object_visual", [])
+    target_vis = target_results.get("object_visual", []) or target_results.get("text", [])
 
     anchor_vis: List = []
     if anchor_objects:
@@ -728,7 +728,7 @@ def _run_open_qa(
             doc_types=["object"],
             object_modality="both",
         )
-        anchor_vis = anchor_results.get("object_visual", [])
+        anchor_vis = anchor_results.get("object_visual", []) or anchor_results.get("text", [])
 
     chunk_map = {c.id: c for c in retriever.chunks}
     frame_results = retriever.search(

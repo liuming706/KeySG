@@ -9,7 +9,7 @@ wandb/
 *.pyo
 *.pyd
 __pycache__/
-
+.playwright-mcp
 # Model files
 *.pkl
 *.pth

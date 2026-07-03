@@ -27,7 +27,7 @@ load:
 # Vision-language model configuration for room descriptions
 vlm:
   provider: openai # openai | ollama
-  model: qwen3-vl-235b-a22b-instruct # qwen3.7-plus # OpenAI model or Ollama model name (e.g., Qwen/Qwen3-VL-8B-Instruct)
+  model: Qwen/Qwen3-VL-8B-Instruct # qwen3.7-plus # OpenAI model or Ollama model name (e.g., Qwen/Qwen3-VL-8B-Instruct)
   # text_model: sensenova-6.7-flash-lite  # Optional separate model for text-only summarization
   qa_method: responses_parse # QA method: responses_parse (OpenAI Responses API) | chat (Chat Completions API)
 
@@ -40,7 +40,7 @@ segmentation:
   sampling_eps: 0.001 # DBSCAN epsilon parameter for clustering [Keyframe sampling]
   sampling_min_samples: 2 # DBSCAN minimum samples per cluster [Keyframe sampling]
   sampling_rot_weight: 1.5 # Weight for rotation in pose sampling distance [Keyframe sampling]
-  sampling_min_cluster_size: 5 # HDBSCAN minimum cluster size for keyframe sampling
+  sampling_min_cluster_size: 7 # HDBSCAN minimum cluster size for keyframe sampling
   sampling_method: hdbscan # Keyframe sampling method: 'hdbscan' or 'rot_trans'
   rot_angle_thresh: 30.0 # Rotation angle threshold (degrees) for rot_trans keyframe sampling
   trans_dist_thresh: 0.5 # Translation distance threshold (meters) for rot_trans keyframe sampling
@@ -95,11 +95,11 @@ nodes:
     enabled: false # true: additionally run red-bbox VLM calls to overwrite keyframe descriptions
     batch_size: 20 # VLM batch size (only used when enabled: true)
     update_label: true # Replace node.label with the VLM/keyframe-refined name
-build_scene_description: false
+build_scene_description: true
 # RAG (Retrieval-Augmented Generation) configuration for scene querying
-build_rag: false # Build RAG database after pipeline completion
+build_rag: true # Build RAG database after pipeline completion
 rag:
-  embedding_model: sentence-transformers/all-MiniLM-L6-v2 # Free local embedding model (sentence-transformers)
+  embedding_model: BAAI/bge-base-zh-v1.5 # Local BGE embedding model
   # Alternative: text-embedding-3-small (OpenAI, requires API key and costs money)
   use_local_embedder: true # Use local sentence-transformers instead of OpenAI (free)
   compute_visual_embeddings: true # Compute visual (CLIP) embeddings for objects/frames

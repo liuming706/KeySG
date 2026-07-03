@@ -19,10 +19,26 @@ from models.llm.prompts import (
     system_instruction_summary,
     system_instruction_tagging,
 )
-from models.llm.openai_api import GPTInterface
-from models.llm.ollama_genai import OllamaGenAI, GenerationParams
-from models.llm.gpt_vlm import GPT_VLMInterface
-from models.llm.ollama_vlm import OllamaVLMInterface
+try:
+    from models.llm.openai_api import GPTInterface
+except ImportError:
+    GPTInterface = None
+
+try:
+    from models.llm.ollama_genai import OllamaGenAI, GenerationParams
+except ImportError:
+    OllamaGenAI = None
+    GenerationParams = None
+
+try:
+    from models.llm.gpt_vlm import GPT_VLMInterface
+except ImportError:
+    GPT_VLMInterface = None
+
+try:
+    from models.llm.ollama_vlm import OllamaVLMInterface
+except ImportError:
+    OllamaVLMInterface = None
 
 __all__ = [
     # Schemas
