@@ -421,6 +421,7 @@ class SceneDescriptor:
 
     def _summarize_frames(self, descriptions: List[Dict[str, Any]]) -> str:
         """Summarize frame descriptions into room summary."""
+        logger.info("Start summarize frames to room sumary!")
         try:
             obs = [coerce_valid_json(d) for d in descriptions if isinstance(d, dict)]
             self._ensure_vlm()
@@ -482,6 +483,7 @@ class SceneDescriptor:
         room_results: Optional[Dict[str, RoomVLMResult]] = None,
     ) -> Dict[str, Dict[str, Any]]:
         """Summarize multiple floors concurrently."""
+        logger.info("Start summarize_floors!")
         tasks, floor_ids = [], []
 
         for floor, rooms in floors_and_rooms:

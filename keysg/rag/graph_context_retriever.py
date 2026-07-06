@@ -164,6 +164,13 @@ class GraphContextRetriever:
             load_scene_description(self.output_dir)
         )
 
+    def init_models_for_visualizer(self) -> None:
+        logger.info("Init models for visualizer start")
+        self._ensure_embedder()
+        self.embedder.model
+        _ensure_clip_util(self)
+        logger.info("Init models for visualizer done")
+
     # ------------------------------------------------------------------
     # Chunk construction
     # ------------------------------------------------------------------

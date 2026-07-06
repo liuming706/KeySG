@@ -368,27 +368,34 @@ def _run_grounding_query(
         )
         retriever.build_faiss_index()
     # print("DEBUG:4")
+    logger.info("retriever start search target object")
     target_results = retriever.search(
         target_q,
         top_k=top_k_objects,
         doc_types=["object"],
         object_modality="both",
     )
-    target_vis = target_results.get("object_visual", []) or target_results.get("text", [])
+    target_vis = target_results.get("object_visual", []) or target_results.get(
+        "text", []
+    )
     # print("DEBUG:5")
     anchor_vis: List = []
     if anchor_objects:
         anchor_query = " ".join(anchor_objects)
+        logger.info("retriever start search anchor object")
         anchor_results = retriever.search(
             anchor_query,
             top_k=top_k_objects,
             doc_types=["object"],
             object_modality="both",
         )
-        anchor_vis = anchor_results.get("object_visual", []) or anchor_results.get("text", [])
+        anchor_vis = anchor_results.get("object_visual", []) or anchor_results.get(
+            "text", []
+        )
 
     # Frame retrieval (same as nr3d_eval)
     chunk_map = {c.id: c for c in retriever.chunks}
+    logger.info("retriever start search frame")
     frame_results = retriever.search(
         query,
         top_k=top_k_frames,
@@ -442,7 +449,7 @@ def _run_grounding_query(
 
         context_text = "\n\n".join(sections)
         frame_images = _load_frame_images(top_frame_chunks, max_frame_images)
-        logger.info("context_text: {}", context_text)
+        # logger.info("context_text: {}", context_text)
         # Phase 4: LLM selection
         try:
             sel = gpt.structured_prompt(
@@ -718,7 +725,9 @@ def _run_open_qa(
         doc_types=["object"],
         object_modality="both",
     )
-    target_vis = target_results.get("object_visual", []) or target_results.get("text", [])
+    target_vis = target_results.get("object_visual", []) or target_results.get(
+        "text", []
+    )
 
     anchor_vis: List = []
     if anchor_objects:
@@ -728,7 +737,9 @@ def _run_open_qa(
             doc_types=["object"],
             object_modality="both",
         )
-        anchor_vis = anchor_results.get("object_visual", []) or anchor_results.get("text", [])
+        anchor_vis = anchor_results.get("object_visual", []) or anchor_results.get(
+            "text", []
+        )
 
     chunk_map = {c.id: c for c in retriever.chunks}
     frame_results = retriever.search(
@@ -1419,6 +1430,7 @@ class KeySGVisualizer:
             r.build_chunks()
             r.compute_embeddings(compute_frame_visual=True, compute_object_visual=True)
             r.build_faiss_index()
+            r.init_models_for_visualizer()
             self._grounding_retriever = r
             logger.info("Retriever ready — subsequent queries will reuse cached model.")
         return self._grounding_retriever
@@ -1818,6 +1830,7 @@ class KeySGVisualizer:
         self._add_objects()
         self._add_keyframes()
         self._build_gui()
+        self._ensure_retriever()
 
         logger.info(
             "Scene loaded — open http://localhost:{} and refresh if switching scenes.",

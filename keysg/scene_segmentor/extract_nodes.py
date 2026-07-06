@@ -129,9 +129,7 @@ class NodesRepo:
             gsam2_cfg = self.gsam2_config
             vlm_cfg = self.vlm_config
             detection_mode = gsam2_cfg.get("detection_mode", "llmdet")
-            gsam_kwargs = self._build_gsam_kwargs(
-                gsam2_cfg, vlm_cfg, detection_mode
-            )
+            gsam_kwargs = self._build_gsam_kwargs(gsam2_cfg, vlm_cfg, detection_mode)
             NodesRepo._shared_segmentor = GroundingSAM2(**gsam_kwargs)
         self.gsam2 = NodesRepo._shared_segmentor
 
@@ -500,7 +498,7 @@ class NodesRepo:
             merged, post_hoc_iou_thresh, post_hoc_sim_thresh, radius
         )
         # lumen_delete 暂时不提取 clip
-        # self._extract_clip_features(merged)
+        self._extract_clip_features(merged)
         self._compute_bboxes(merged)
 
         logger.info(f"Merge complete. Final node count: {len(merged)}")
@@ -843,6 +841,7 @@ class NodesRepo:
 
     def _extract_clip_features(self, nodes: List[ObjNode]) -> None:
         """Extract CLIP features for all nodes."""
+        logger.info("Start extract clip features!")
         for node in tqdm(nodes, desc="Extracting CLIP features"):
             self._extract_clip_feature(node)
 
