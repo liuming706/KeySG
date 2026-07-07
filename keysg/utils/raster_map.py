@@ -4,7 +4,7 @@ import os
 import json
 from datetime import datetime
 from typing import Iterable, Optional, Sequence, Tuple
-
+import open3d as o3d
 import cv2
 import numpy as np
 from loguru import logger
@@ -20,7 +20,7 @@ CELL_CODES = {
 
 
 def save_scene_raster_map(
-    floor_rooms: Iterable[Tuple[object, Sequence[object]]],
+    pcd: o3d.geometry.PointCloud,
     output_dir: str,
     *,
     up_axis: str = "y",
@@ -33,35 +33,27 @@ def save_scene_raster_map(
 ) -> Optional[str]:
     if resolution <= 0:
         raise ValueError(f"scene_map.resolution must be positive, got {resolution}")
-
     up_idx, horiz_idx = _axis_indices(up_axis)
     layers = []
-    for floor, rooms in floor_rooms:
-        points = _floor_points(floor, rooms)
-        if points.size == 0:
-            continue
-
-        zero_level = _zero_level(floor, rooms, points, up_idx)
-        crop_height = _crop_height(
-            floor, rooms, points, up_idx, zero_level, scene_height
-        )
-        if crop_height <= 0:
-            logger.warning(
-                "Skipping floor {} with non-positive map height {}",
-                getattr(floor, "floor_id", "?"),
-                crop_height,
-            )
-            continue
-
-        vertical = points[:, up_idx]
+    if len(pcd.points) > 0:
+        pts = np.asarray(pcd.points)
+        zero_level = float(np.nanmin(pts[:, up_idx]))
+        floor_height = float(np.nanmax(pts[:, up_idx]) - zero_level)
+        crop_height = scene_height
+        vertical = pts[:, up_idx]
         crop_mask = (vertical >= zero_level - floor_clearance) & (
             vertical <= zero_level + crop_height
         )
-        if not np.any(crop_mask):
-            continue
-
-        cropped = points[crop_mask]
+        cropped = pts[crop_mask]
         cropped_vertical = cropped[:, up_idx]
+        logger.info(
+            "zero_level:{}, floor_clearance:{}, obstacle_min_height:{}, crop_height:{}, floor_height:{}",
+            zero_level,
+            floor_clearance,
+            obstacle_min_height,
+            crop_height,
+            floor_height,
+        )
         free_mask = cropped_vertical <= zero_level + floor_clearance
         occupied_mask = cropped_vertical >= zero_level + obstacle_min_height
         layers.append((cropped[:, horiz_idx], free_mask, occupied_mask))
@@ -162,7 +154,7 @@ def _crop_height(
     configured_height: Optional[float],
 ) -> float:
     floor_height = getattr(floor, "floor_height", None)
-
+    logger.info("floor_height: {}", floor_height)
     if configured_height is not None and configured_height > 0:
         return float(configured_height)
 

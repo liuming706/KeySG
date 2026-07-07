@@ -97,20 +97,21 @@ class SceneSegmentor:
     def run(self) -> Tuple[List[Floor], List[Tuple[Floor, List[Room]]]]:
         """Execute the segmentation pipeline."""
         logger.info("Fusing scene point cloud...")
-        scene_pcd = self._fuse_point_cloud()
+        self.scene_pcd = self._fuse_point_cloud()
 
         # Skip segmentation for non-HMP3D datasets
+        # lumen_delete
         skip_segmentation = getattr(self.dataset, "name", None) not in [
             "HMP3D",
             "AzureRGBD",
-            # "Replica",
+            "Replica",
         ]
 
         if skip_segmentation:
             logger.info("Creating single floor/room (non-HMP3D dataset)")
-            floors, floor_rooms = self._create_single_floor_room(scene_pcd)
+            floors, floor_rooms = self._create_single_floor_room(self.scene_pcd)
         else:
-            floors = self._segment_floors(scene_pcd)
+            floors = self._segment_floors(self.scene_pcd)
             floor_rooms = self._segment_rooms(floors)
 
         self._assign_poses_to_rooms(floor_rooms)

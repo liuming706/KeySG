@@ -3,7 +3,7 @@ output/
 logs/
 wandb/
 .claude/
-
+robot_agent/
 # Python
 *.pyc
 *.pyo

@@ -190,7 +190,7 @@ class KeySGPipeline:
             self._store_segmentation_results(
                 floors, floor_rooms, dense_map, sampled_map
             )
-            self._save_scene_raster_map(floor_rooms)
+            self._save_scene_raster_map(seg.scene_pcd)
             self._save_keyframe_poses()
             logger.info(
                 "Loaded {} floors with {} rooms",
@@ -236,7 +236,7 @@ class KeySGPipeline:
             up_axis=getattr(seg_cfg, "up_axis", "y"),
         )
         seg.run()
-        self._save_scene_raster_map(seg.get_rooms_by_floor())
+        self._save_scene_raster_map(seg.scene_pcd)
         logger.info("Segmentation saved to {}", seg.save())
 
         self._store_segmentation_results(
@@ -260,7 +260,10 @@ class KeySGPipeline:
         self.sampled_map = sampled_map
         self.rooms = [room for _, rooms in floor_rooms for room in rooms]
 
-    def _save_scene_raster_map(self, floor_rooms: List) -> None:
+    def _save_scene_raster_map(
+        self,
+        pcd: o3d.geometry.PointCloud,
+    ) -> None:
         map_cfg = getattr(self.cfg, "scene_map", {})
         if not getattr(map_cfg, "enabled", True):
             return
@@ -268,7 +271,7 @@ class KeySGPipeline:
         seg_cfg = self.cfg.segmentation
         try:
             save_scene_raster_map(
-                floor_rooms,
+                pcd,
                 self.output_dir,
                 up_axis=getattr(seg_cfg, "up_axis", "y"),
                 resolution=getattr(map_cfg, "resolution", seg_cfg.grid_resolution),
@@ -878,9 +881,10 @@ class KeySGPipeline:
         if getattr(self.cfg, "build_object_node", True):
             if self.cfg.load.nodes:
                 self.load_nodes()
+                self._save_dsg_json()
             else:
                 self.run_node_extraction()
-        self._save_dsg_json()
+                self._save_dsg_json()
 
         # Scene Description
         if getattr(self.cfg, "build_scene_description", True):

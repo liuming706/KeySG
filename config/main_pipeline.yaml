@@ -57,7 +57,7 @@ scene_map:
   occupied_dilation_radius: 0
 
 # Object node extraction and merging parameters
-build_object_node: true
+build_object_node: false
 nodes:
   segmentor: gsam2 # Segmentation backend
   object_tags: coco # Method for object tags: 'vlm' (vision-language model), 'ram' (RAM++ tagger), or 'coco' (config/coco.txt)
@@ -95,9 +95,9 @@ nodes:
     enabled: false # true: additionally run red-bbox VLM calls to overwrite keyframe descriptions
     batch_size: 20 # VLM batch size (only used when enabled: true)
     update_label: true # Replace node.label with the VLM/keyframe-refined name
-build_scene_description: true
+build_scene_description: false
 # RAG (Retrieval-Augmented Generation) configuration for scene querying
-build_rag: true # Build RAG database after pipeline completion
+build_rag: false # Build RAG database after pipeline completion
 rag:
   embedding_model: BAAI/bge-base-zh-v1.5 # Local BGE embedding model
   # Alternative: text-embedding-3-small (OpenAI, requires API key and costs money)
